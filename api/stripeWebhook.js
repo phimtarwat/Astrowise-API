@@ -32,63 +32,28 @@ export default async function handler(req, res) {
     const intent = event.data.object;
     console.log("✅ Stripe webhook received:", intent.id);
 
-    // ดึงข้อมูลให้ครบ (เอา receipt_url)
-    let receipt_url = "";
-    try {
-      const pi = await stripe.paymentIntents.retrieve(intent.id, { expand: ["latest_charge"] });
-      if (pi?.latest_charge && typeof pi.latest_charge === "object") {
-        receipt_url = pi.latest_charge.receipt_url || "";
-      }
-    } catch (e) {
-      console.warn("⚠️ cannot fetch receipt_url:", e.message);
-    }
+    // 🔹 ดึง email
+    const email =
+      intent.receipt_email ||
+      intent.customer_email ||
+      intent.charges?.data?.[0]?.billing_details?.email ||
+      "";
 
-    const email = intent.receipt_email || "";
-    const rawPkg = intent.metadata?.package || "Unknown";
-    const packageName = rawPkg.toLowerCase(); // ให้ตรงกับชีท (lite/standard/premium)
-
+    // 🔹 quota ตาม package
+    const packageType = intent.metadata?.package || "unknown";
     let quota = 0;
-    if (packageName === "lite") quota = 5;
-    else if (packageName === "standard") quota = 10;
-    else if (packageName === "premium") quota = 30;
-    else console.warn("⚠️ Unknown package:", rawPkg);
+    if (packageType.toLowerCase() === "lite") quota = 5;
+    else if (packageType.toLowerCase() === "standard") quota = 10;
+    else if (packageType.toLowerCase() === "premium") quota = 30;
 
-    // expiry = 1 ปีนับจากวันนี้ (ปรับตามนโยบายได้)
+    // 🔹 expiry = วันนี้ + 30 วัน
     const exp = new Date();
-    exp.setFullYear(exp.getFullYear() + 1);
+    exp.setDate(exp.getDate() + 30);
     const expiry = exp.toISOString().slice(0, 10); // YYYY-MM-DD
 
-    const userId = generateUserId();  // 5 หลัก
-    const token = generateToken();    // 5 หลัก
+    // 🔹 gen user_id + token
+    const userId = generateUserId();
+    const token = generateToken();
     const nowIso = new Date().toISOString();
 
-    const ok = await addUser({
-      userId,
-      token,
-      expiry,
-      quota,
-      used_count: 0,
-      packageName,
-      email,
-      created_at: nowIso,
-      payment_intent_id: intent.id,
-      receipt_url,
-      paid_at: nowIso,
-    });
-
-    if (!ok) console.error("❌ addUser failed");
-
-    return res.json({
-      success: true,
-      message: "✅ การชำระเงินสำเร็จแล้วค่ะ",
-      user_id: userId,
-      token,
-      quota,
-      package: packageName,
-      expiry,
-      receipt_url,
-    });
-  }
-
-  return res.json({ received: true });
-}
+    // 🔹 ad
