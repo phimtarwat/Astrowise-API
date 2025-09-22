@@ -5,14 +5,12 @@ import { generateUserId, generateToken } from "../lib/token.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-export const config = {
-  api: { bodyParser: false }
-};
+export const config = { api: { bodyParser: false } };
 
 function buffer(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on("data", chunk => chunks.push(chunk));
+    req.on("data", c => chunks.push(c));
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
@@ -31,42 +29,54 @@ export default async function handler(req, res) {
   }
 
   if (event.type === "payment_intent.succeeded") {
-    const paymentIntent = event.data.object;
-    console.log("✅ Stripe webhook received:", paymentIntent.id);
+    const intent = event.data.object;
+    console.log("✅ Stripe webhook received:", intent.id);
 
-    const email = paymentIntent.receipt_email || "unknown";
-    const packageType = paymentIntent.metadata?.package || "Unknown";
-    let quota = 0;
-
-    if (packageType === "Lite") quota = 5;
-    else if (packageType === "Standard") quota = 10;
-    else if (packageType === "Premium") quota = 30;
-    else {
-      console.warn("⚠️ Unknown packageType:", packageType);
-    }
-
-    const userId = generateUserId();
-    const token = generateToken();
-    console.log("👉 Generating new user:", { userId, token, quota });
-
+    // ดึงข้อมูลให้ครบ (เอา receipt_url)
+    let receipt_url = "";
     try {
-      const success = await addUser({
-        userId,
-        token,
-        email,
-        quota,
-        payment_intent_id: paymentIntent.id,
-        paid_at: new Date().toISOString(),
-      });
-
-      if (!success) {
-        console.error("❌ Failed to add user to Google Sheet");
-      } else {
-        console.log("✅ User added to Google Sheet:", userId, token);
+      const pi = await stripe.paymentIntents.retrieve(intent.id, { expand: ["latest_charge"] });
+      if (pi?.latest_charge && typeof pi.latest_charge === "object") {
+        receipt_url = pi.latest_charge.receipt_url || "";
       }
-    } catch (err) {
-      console.error("❌ Error in addUser:", err.message, err);
+    } catch (e) {
+      console.warn("⚠️ cannot fetch receipt_url:", e.message);
     }
+
+    const email = intent.receipt_email || "";
+    const rawPkg = intent.metadata?.package || "Unknown";
+    const packageName = rawPkg.toLowerCase(); // ให้ตรงกับชีท (lite/standard/premium)
+
+    let quota = 0;
+    if (packageName === "lite") quota = 5;
+    else if (packageName === "standard") quota = 10;
+    else if (packageName === "premium") quota = 30;
+    else console.warn("⚠️ Unknown package:", rawPkg);
+
+    // expiry = 1 ปีนับจากวันนี้ (ปรับตามนโยบายได้)
+    const exp = new Date();
+    exp.setFullYear(exp.getFullYear() + 1);
+    const expiry = exp.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const userId = generateUserId();  // 5 หลัก
+    const token = generateToken();    // 5 หลัก
+    const nowIso = new Date().toISOString();
+
+    const ok = await addUser({
+      userId,
+      token,
+      expiry,
+      quota,
+      used_count: 0,
+      packageName,
+      email,
+      created_at: nowIso,
+      payment_intent_id: intent.id,
+      receipt_url,
+      paid_at: nowIso,
+    });
+
+    if (!ok) console.error("❌ addUser failed");
 
     return res.json({
       success: true,
@@ -74,9 +84,11 @@ export default async function handler(req, res) {
       user_id: userId,
       token,
       quota,
-      package: packageType,
+      package: packageName,
+      expiry,
+      receipt_url,
     });
   }
 
-  res.json({ received: true });
+  return res.json({ received: true });
 }
