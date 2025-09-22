@@ -8,8 +8,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "missing user_id or token" });
   }
 
+  // ✅ ต้องมี mode=check ตามที่ core กำหนด
   if (mode !== "check") {
-    return res.status(400).json({ error: "invalid_mode", message: "mode=check required" });
+    return res.status(400).json({
+      error: "invalid_mode",
+      message: "ต้องใส่ค่า mode=check"
+    });
   }
 
   const user = await findUser(user_id, token);
@@ -26,6 +30,7 @@ export default async function handler(req, res) {
     });
   }
 
+  // ถ้าเจอ user → return quota
   return res.json({
     status: "valid",
     message: "✅ ใช้งานได้",
