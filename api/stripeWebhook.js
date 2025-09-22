@@ -26,30 +26,47 @@ export default async function handler(req, res) {
   try {
     event = stripe.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
+    console.error("❌ Webhook signature verification failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
+    console.log("✅ Stripe webhook received:", paymentIntent.id);
+
     const email = paymentIntent.receipt_email || "unknown";
-    const packageType = paymentIntent.metadata.package;
+    const packageType = paymentIntent.metadata?.package || "Unknown";
     let quota = 0;
 
     if (packageType === "Lite") quota = 5;
-    if (packageType === "Standard") quota = 10;
-    if (packageType === "Premium") quota = 30;
+    else if (packageType === "Standard") quota = 10;
+    else if (packageType === "Premium") quota = 30;
+    else {
+      console.warn("⚠️ Unknown packageType:", packageType);
+    }
 
     const userId = generateUserId();
     const token = generateToken();
+    console.log("👉 Generating new user:", { userId, token, quota });
 
-    await addUser({
-      userId,
-      token,
-      email,
-      quota,
-      payment_intent_id: paymentIntent.id,
-      paid_at: new Date().toISOString(),
-    });
+    try {
+      const success = await addUser({
+        userId,
+        token,
+        email,
+        quota,
+        payment_intent_id: paymentIntent.id,
+        paid_at: new Date().toISOString(),
+      });
+
+      if (!success) {
+        console.error("❌ Failed to add user to Google Sheet");
+      } else {
+        console.log("✅ User added to Google Sheet:", userId, token);
+      }
+    } catch (err) {
+      console.error("❌ Error in addUser:", err.message, err);
+    }
 
     return res.json({
       success: true,
@@ -63,4 +80,3 @@ export default async function handler(req, res) {
 
   res.json({ received: true });
 }
-
