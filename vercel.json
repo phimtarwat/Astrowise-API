@@ -1,1 +1,13 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/*.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/checkToken", "dest": "/api/checkToken.js" },
+    { "src": "/api/askFortune", "dest": "/api/askFortune.js" },
+    { "src": "/api/stripeWebhook", "dest": "/api/stripeWebhook.js" },
+    { "src": "/api/pushMessage", "dest": "/api/pushMessage.js" }
+  ]
+}
 
