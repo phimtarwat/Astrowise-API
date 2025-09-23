@@ -2,6 +2,7 @@
 import Stripe from "stripe";
 import { addUser } from "../lib/googleSheet.js";
 import { generateUserId, generateToken } from "../lib/token.js";
+import { getPackageByAmount } from "../lib/packageConfig.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -57,16 +58,9 @@ export default async function handler(req, res) {
       "";
     console.log("👉 Email resolved:", email);
 
-    // 🔹 quota ตาม package (ต้องตั้ง metadata ใน Payment Link)
-    const rawPkg = intent.metadata?.package || "unknown";
-    const packageName = rawPkg.toLowerCase();
-    let quota = 0;
-    if (packageName === "lite") quota = 5;
-    else if (packageName === "standard") quota = 10;
-    else if (packageName === "premium") quota = 30;
-    else console.warn("⚠️ Unknown package:", rawPkg);
-
-    console.log("👉 Package:", packageName, "=> Quota:", quota);
+    // 🔹 quota/package จาก amount_received (มี fallback)
+    const { name: packageName, quota } = getPackageByAmount(intent.amount_received);
+    console.log("👉 Package mapped from amount:", packageName, "=> Quota:", quota);
 
     // 🔹 expiry = 30 วันจากวันชำระเงิน
     const exp = new Date();
