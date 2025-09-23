@@ -2,10 +2,16 @@
 import { findUser, updateUsage } from "../lib/googleSheet.js";
 
 export default async function handler(req, res) {
-  const { user_id, token, question } = req.body;
+  // ✅ รับค่าจาก body ก่อน ถ้าไม่มีลองใช้ query fallback
+  const user_id = req.body?.user_id || req.query?.user_id;
+  const token = req.body?.token || req.query?.token;
+  const question = req.body?.question || req.query?.question;
 
   if (!user_id || !token) {
-    return res.status(400).json({ error: "missing user_id or token" });
+    return res.status(400).json({
+      error: "missing_user_token",
+      message: "❌ ต้องส่ง user_id และ token มาด้วย",
+    });
   }
 
   // 🔎 หา user
@@ -52,7 +58,7 @@ export default async function handler(req, res) {
   }
 
   // TODO: เรียก core astrology API ที่นี่
-  const fortune = `🔮 คำทำนายสำหรับ "${question}" (Demo result)`;  
+  const fortune = `🔮 คำทำนายสำหรับ "${question || "คำถามที่ยังไม่ได้ระบุ"}" (Demo result)`;
 
   return res.json({
     success: true,
