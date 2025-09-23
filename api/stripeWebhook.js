@@ -22,7 +22,11 @@ export default async function handler(req, res) {
 
   let event;
   try {
-    event = stripe.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(
+      buf,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
   } catch (err) {
     console.error("❌ Webhook signature verification failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -35,7 +39,9 @@ export default async function handler(req, res) {
     // 🔹 ดึง receipt_url
     let receipt_url = "";
     try {
-      const pi = await stripe.paymentIntents.retrieve(intent.id, { expand: ["latest_charge"] });
+      const pi = await stripe.paymentIntents.retrieve(intent.id, {
+        expand: ["latest_charge"],
+      });
       if (pi?.latest_charge && typeof pi.latest_charge === "object") {
         receipt_url = pi.latest_charge.receipt_url || "";
       }
@@ -43,12 +49,13 @@ export default async function handler(req, res) {
       console.warn("⚠️ cannot fetch receipt_url:", e.message);
     }
 
-    // 🔹 ดึง email (เผื่อ receipt_email ว่าง)
+    // 🔹 ดึง email
     const email =
       intent.receipt_email ||
       intent.customer_email ||
       intent.charges?.data?.[0]?.billing_details?.email ||
       "";
+    console.log("👉 Email resolved:", email);
 
     // 🔹 quota ตาม package
     const rawPkg = intent.metadata?.package || "unknown";
@@ -59,15 +66,20 @@ export default async function handler(req, res) {
     else if (packageName === "premium") quota = 30;
     else console.warn("⚠️ Unknown package:", rawPkg);
 
+    console.log("👉 Package:", packageName, "=> Quota:", quota);
+
     // 🔹 expiry = 30 วันจากวันชำระเงิน
     const exp = new Date();
     exp.setDate(exp.getDate() + 30);
-    const expiry = exp.toISOString().slice(0, 10); // YYYY-MM-DD
+    const expiry = exp.toISOString().slice(0, 10);
+    console.log("👉 Expiry date set:", expiry);
 
     // 🔹 gen user_id + token
-    const userId = generateUserId();  // 5 หลัก
-    const token = generateToken();    // 5 หลัก
+    const userId = generateUserId(); // 5 หลัก
+    const token = generateToken();   // 5 หลัก
     const nowIso = new Date().toISOString();
+
+    console.log("👉 Generating new user:", { userId, token });
 
     // 🔹 บันทึกลง Google Sheet
     const ok = await addUser({
@@ -84,7 +96,11 @@ export default async function handler(req, res) {
       paid_at: nowIso,
     });
 
-    if (!ok) console.error("❌ addUser failed");
+    if (!ok) {
+      console.error("❌ addUser failed to write Google Sheet");
+    } else {
+      console.log("✅ addUser success, user written to Google Sheet");
+    }
 
     return res.json({
       success: true,
