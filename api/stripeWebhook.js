@@ -5,12 +5,14 @@ import { generateUserId, generateToken } from "../lib/token.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-export const config = { api: { bodyParser: false } };
+export const config = {
+  api: { bodyParser: false }
+};
 
 function buffer(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on("data", c => chunks.push(c));
+    req.on("data", chunk => chunks.push(chunk));
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
@@ -29,31 +31,52 @@ export default async function handler(req, res) {
   }
 
   if (event.type === "payment_intent.succeeded") {
-    const intent = event.data.object;
-    console.log("✅ Stripe webhook received:", intent.id);
+    const paymentIntent = event.data.object;
+    console.log("✅ Stripe webhook received:", paymentIntent.id);
 
-    // 🔹 ดึง email
-    const email =
-      intent.receipt_email ||
-      intent.customer_email ||
-      intent.charges?.data?.[0]?.billing_details?.email ||
-      "";
-
-    // 🔹 quota ตาม package
-    const packageType = intent.metadata?.package || "unknown";
+    const email = paymentIntent.receipt_email || "unknown";
+    const packageType = paymentIntent.metadata?.package || "Unknown";
     let quota = 0;
-    if (packageType.toLowerCase() === "lite") quota = 5;
-    else if (packageType.toLowerCase() === "standard") quota = 10;
-    else if (packageType.toLowerCase() === "premium") quota = 30;
 
-    // 🔹 expiry = วันนี้ + 30 วัน
-    const exp = new Date();
-    exp.setDate(exp.getDate() + 30);
-    const expiry = exp.toISOString().slice(0, 10); // YYYY-MM-DD
+    if (packageType === "Lite") quota = 5;
+    else if (packageType === "Standard") quota = 10;
+    else if (packageType === "Premium") quota = 30;
+    else {
+      console.warn("⚠️ Unknown packageType:", packageType);
+    }
 
-    // 🔹 gen user_id + token
     const userId = generateUserId();
     const token = generateToken();
-    const nowIso = new Date().toISOString();
+    console.log("👉 Generating new user:", { userId, token, quota });
 
-    // 🔹 ad
+    try {
+      const success = await addUser({
+        userId,
+        token,
+        email,
+        quota,
+        payment_intent_id: paymentIntent.id,
+        paid_at: new Date().toISOString(),
+      });
+
+      if (!success) {
+        console.error("❌ Failed to add user to Google Sheet");
+      } else {
+        console.log("✅ User added to Google Sheet:", userId, token);
+      }
+    } catch (err) {
+      console.error("❌ Error in addUser:", err.message, err);
+    }
+
+    return res.json({
+      success: true,
+      message: "✅ การชำระเงินสำเร็จแล้วค่ะ",
+      user_id: userId,
+      token,
+      quota,
+      package: packageType,
+    });
+  }
+
+  res.json({ received: true });
+}
