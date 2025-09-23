@@ -49,7 +49,7 @@ export default async function handler(req, res) {
       console.warn("⚠️ cannot fetch receipt_url:", e.message);
     }
 
-    // 🔹 ดึง email
+    // 🔹 ดึง email (fallback หลายแบบ)
     const email =
       intent.receipt_email ||
       intent.customer_email ||
@@ -57,7 +57,7 @@ export default async function handler(req, res) {
       "";
     console.log("👉 Email resolved:", email);
 
-    // 🔹 quota ตาม package
+    // 🔹 quota ตาม package (ต้องตั้ง metadata ใน Payment Link)
     const rawPkg = intent.metadata?.package || "unknown";
     const packageName = rawPkg.toLowerCase();
     let quota = 0;
@@ -79,7 +79,15 @@ export default async function handler(req, res) {
     const token = generateToken();   // 5 หลัก
     const nowIso = new Date().toISOString();
 
-    console.log("👉 Generating new user:", { userId, token });
+    // ✅ log debug payload ที่จะบันทึก
+    console.log("👉 addUser payload:", {
+      userId,
+      token,
+      expiry,
+      quota,
+      packageName,
+      email,
+    });
 
     // 🔹 บันทึกลง Google Sheet
     const ok = await addUser({
