@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "missing user_id or token" });
   }
 
-  // 🔎 ตรวจสอบ user
+  // 🔎 หา user
   const user = await findUser(user_id, token);
   if (!user) {
     return res.status(401).json({
@@ -17,16 +17,16 @@ export default async function handler(req, res) {
     });
   }
 
-  // 🔎 ตรวจสอบ expiry
+  // 🔎 ตรวจ expiry
   const today = new Date().toISOString().slice(0, 10);
   if (user.expiry && today > user.expiry) {
     return res.status(401).json({
       error: "expired",
-      message: "❌ สิทธิ์ของคุณหมดอายุแล้ว (30 วัน) กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      message: "❌ สิทธิ์ของคุณหมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่ค่ะ",
     });
   }
 
-  // 🔎 ตรวจสอบ quota
+  // 🔎 ตรวจ quota
   if (user.quota <= 0) {
     return res.status(401).json({
       error: "no_quota",
@@ -34,22 +34,30 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ หัก quota + บันทึก used_count
+  // ✅ หัก quota และบันทึก used_count (+1)
   const newQuota = user.quota - 1;
-  await updateUsage(user_id, token, newQuota);
+  const updated = await updateUsage(user_id, token, newQuota);
 
-  // ⚠️ แจ้งเตือนถ้าใกล้หมดสิทธิ์
+  if (!updated) {
+    return res.status(500).json({
+      error: "update_failed",
+      message: "❌ ไม่สามารถอัปเดตสิทธิ์ในระบบได้",
+    });
+  }
+
+  // ⚠️ เตือนถ้า quota ใกล้หมด
   let warning = "";
   if (newQuota < 5) {
     warning = `⚠️ เหลือสิทธิ์อีกเพียง ${newQuota} ครั้ง อย่าลืมต่ออายุก่อนหมดสิทธิ์นะคะ`;
   }
 
-  // TODO: เรียก core astrology ที่นี่
-  const fortune = `🔮 คำทำนายสำหรับ "${question}" (Demo result)`;
+  // TODO: เรียก core astrology API ที่นี่
+  const fortune = `🔮 คำทำนายสำหรับ "${question}" (Demo result)`;  
 
   return res.json({
     success: true,
     remaining: newQuota,
+    used: user.used_count + 1,
     answer: fortune,
     warning,
   });
