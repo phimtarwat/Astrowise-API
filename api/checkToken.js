@@ -6,15 +6,15 @@ export default async function handler(req, res) {
 
   // ✅ ต้องมี user_id, token
   if (!user_id || !token) {
-    return res.status(400).json({ error: "missing user_id or token" });
+    return res.status(400).json({
+      status: "error",
+      message: "❌ ต้องส่ง user_id และ token มาด้วย",
+    });
   }
 
-  // ✅ ต้องส่ง mode=check
-  if (mode !== "check") {
-    return res.status(400).json({
-      error: "invalid_mode",
-      message: "ต้องใส่ mode=check",
-    });
+  // ✅ ถ้า connector ไม่ส่ง mode=check → เราจะถือว่าเป็น check mode ให้เลย
+  if (!mode || mode !== "check") {
+    console.warn("⚠️ mode ไม่ถูกต้อง (req.query.mode =", mode, ") → บังคับให้เป็น check");
   }
 
   // 🔎 หา user ใน Google Sheet
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // 📌 ตรวจ expiry (ถ้าเลยวันที่หมดอายุ)
+  // 📌 ตรวจ expiry
   const today = new Date().toISOString().slice(0, 10);
   if (user.expiry && today > user.expiry) {
     return res.status(401).json({
