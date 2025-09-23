@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     const intent = event.data.object;
     console.log("✅ Stripe webhook received:", intent.id);
 
-    // ดึงข้อมูลให้ครบ (เอา receipt_url)
+    // 🔹 ดึง receipt_url
     let receipt_url = "";
     try {
       const pi = await stripe.paymentIntents.retrieve(intent.id, { expand: ["latest_charge"] });
@@ -43,25 +43,33 @@ export default async function handler(req, res) {
       console.warn("⚠️ cannot fetch receipt_url:", e.message);
     }
 
-    const email = intent.receipt_email || "";
-    const rawPkg = intent.metadata?.package || "Unknown";
-    const packageName = rawPkg.toLowerCase(); // ให้ตรงกับชีท (lite/standard/premium)
+    // 🔹 ดึง email (เผื่อ receipt_email ว่าง)
+    const email =
+      intent.receipt_email ||
+      intent.customer_email ||
+      intent.charges?.data?.[0]?.billing_details?.email ||
+      "";
 
+    // 🔹 quota ตาม package
+    const rawPkg = intent.metadata?.package || "unknown";
+    const packageName = rawPkg.toLowerCase();
     let quota = 0;
     if (packageName === "lite") quota = 5;
     else if (packageName === "standard") quota = 10;
     else if (packageName === "premium") quota = 30;
     else console.warn("⚠️ Unknown package:", rawPkg);
 
-    // expiry = 1 ปีนับจากวันนี้ (ปรับตามนโยบายได้)
+    // 🔹 expiry = 30 วันจากวันชำระเงิน
     const exp = new Date();
-    exp.setFullYear(exp.getFullYear() + 1);
+    exp.setDate(exp.getDate() + 30);
     const expiry = exp.toISOString().slice(0, 10); // YYYY-MM-DD
 
+    // 🔹 gen user_id + token
     const userId = generateUserId();  // 5 หลัก
     const token = generateToken();    // 5 หลัก
     const nowIso = new Date().toISOString();
 
+    // 🔹 บันทึกลง Google Sheet
     const ok = await addUser({
       userId,
       token,
@@ -85,6 +93,7 @@ export default async function handler(req, res) {
       token,
       quota,
       package: packageName,
+      email,
       expiry,
       receipt_url,
     });
