@@ -3,14 +3,12 @@ import { findUser, updateUsage } from "../lib/googleSheet.js";
 import { getAstrologyPrediction } from "../lib/astrologyCore.js";
 
 export default async function handler(req, res) {
-  // ✅ รองรับเฉพาะ POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
   const { user_id, token, question } = req.body;
 
-  // 🔎 ตรวจสอบ input
   if (!user_id || !token || !question) {
     return res.status(400).json({
       error: "missing_fields",
@@ -18,12 +16,12 @@ export default async function handler(req, res) {
     });
   }
 
-  // 🔍 หา user จาก Google Sheet
+  // 🔎 ตรวจสอบ user
   const user = await findUser(user_id, token);
   if (!user) {
     return res.status(401).json({
       error: "invalid",
-      message: "❌ ไม่พบ user_id/token ในระบบ กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      message: "❌ ไม่พบ user_id/token ในระบบ กรุณาซื้อแพ็กเกจใหม่",
     });
   }
 
@@ -32,7 +30,7 @@ export default async function handler(req, res) {
   if (user.expiry && today > user.expiry) {
     return res.status(401).json({
       error: "expired",
-      message: "❌ สิทธิ์หมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      message: "❌ สิทธิ์หมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่",
     });
   }
 
@@ -40,32 +38,30 @@ export default async function handler(req, res) {
   if (user.quota <= 0) {
     return res.status(401).json({
       error: "no_quota",
-      message: "❌ สิทธิ์หมดแล้ว กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      message: "❌ สิทธิ์หมดแล้ว กรุณาซื้อแพ็กเกจใหม่",
     });
   }
 
   try {
-    // ✨ เรียก core astrology (ดึงผลจริงจาก lib/astrologyCore.js)
+    // ✨ ใช้ AI core
     const fortune = await getAstrologyPrediction(question);
 
-    // ✅ ถ้าได้ผลลัพธ์ → หัก quota
+    // ✅ หัก quota หลังจากได้ผลลัพธ์
     const newQuota = user.quota - 1;
     const updated = await updateUsage(user_id, token, newQuota);
 
     if (!updated) {
       return res.status(500).json({
         error: "update_failed",
-        message: "❌ ไม่สามารถอัปเดต quota ใน Google Sheet ได้",
+        message: "❌ ไม่สามารถอัปเดตสิทธิในฐานข้อมูลสมาชิกได้",
       });
     }
 
-    // ⚠️ เตือนถ้า quota ใกล้หมด
     let warning = "";
     if (newQuota < 3) {
       warning = `⚠️ เหลือสิทธิ์อีก ${newQuota} ครั้ง`;
     }
 
-    // ✅ ส่งผลลัพธ์กลับ
     return res.json({
       success: true,
       remaining: newQuota,
@@ -77,7 +73,7 @@ export default async function handler(req, res) {
     console.error("❌ Error generating fortune:", err.message);
     return res.status(500).json({
       error: "fortune_failed",
-      message: "❌ ไม่สามารถสร้างคำทำนายได้ กรุณาลองใหม่ค่ะ",
+      message: "❌ ไม่สามารถให้คำทำนายได้ กรุณาลองใหม่",
     });
   }
 }
