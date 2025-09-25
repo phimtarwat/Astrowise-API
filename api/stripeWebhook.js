@@ -58,7 +58,7 @@ export default async function handler(req, res) {
       "";
     console.log("👉 Email resolved:", email);
 
-    // 🔹 quota/package จาก amount_received (มี fallback)
+    // 🔹 quota/package จาก amount_received
     const { name: packageName, quota } = getPackageByAmount(intent.amount_received);
     console.log("👉 Package mapped from amount:", packageName, "=> Quota:", quota);
 
@@ -69,11 +69,10 @@ export default async function handler(req, res) {
     console.log("👉 Expiry date set:", expiry);
 
     // 🔹 gen user_id + token
-    const userId = generateUserId(); // 5 หลัก
-    const token = generateToken();   // 5 หลัก
+    const userId = generateUserId();
+    const token = generateToken();
     const nowIso = new Date().toISOString();
 
-    // ✅ log debug payload ที่จะบันทึก
     console.log("👉 addUser payload:", {
       userId,
       token,
@@ -102,8 +101,28 @@ export default async function handler(req, res) {
       console.error("❌ addUser failed to write Google Sheet");
     } else {
       console.log("✅ addUser success, user written to Google Sheet");
+
+      // 🔹 Push message กลับไปที่ GPT Chat
+      try {
+        const resp = await fetch(`${process.env.BASE_URL}/api/pushMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            token,
+            quota,
+            package: packageName,
+            expiry,
+          }),
+        });
+        const data = await resp.json();
+        console.log("✅ pushMessage response:", data);
+      } catch (err) {
+        console.error("❌ Failed to pushMessage:", err.message);
+      }
     }
 
+    // ✅ ตอบ Stripe กลับไปตามปกติ
     return res.json({
       success: true,
       message: "✅ การชำระเงินสำเร็จแล้วค่ะ",
