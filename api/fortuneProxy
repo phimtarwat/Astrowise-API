@@ -1,5 +1,7 @@
 // api/fortuneProxy.js
 import { findUser, updateUsage } from "../lib/googleSheet.js";
+// สมมติว่า core จริงคือ astrology-core
+import { getAstrologyPrediction } from "../lib/astrologyCore.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -8,7 +10,6 @@ export default async function handler(req, res) {
 
   const { user_id, token, question } = req.body;
 
-  // 🔎 ตรวจสอบ input
   if (!user_id || !token || !question) {
     return res.status(400).json({
       error: "missing_fields",
@@ -16,25 +17,25 @@ export default async function handler(req, res) {
     });
   }
 
-  // 🔍 หา user ใน Google Sheet
+  // 🔎 หา user
   const user = await findUser(user_id, token);
   if (!user) {
     return res.status(401).json({
-      error: "invalid_token",
-      message: "❌ ไม่พบผู้ใช้ กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      error: "invalid",
+      message: "❌ ไม่พบ user_id/token ในระบบ กรุณาซื้อแพ็กเกจใหม่",
     });
   }
 
-  // ⏳ ตรวจสอบวันหมดอายุ
+  // 📌 ตรวจ expiry
   const today = new Date().toISOString().slice(0, 10);
   if (user.expiry && today > user.expiry) {
     return res.status(401).json({
       error: "expired",
-      message: "❌ สิทธิ์ของคุณหมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      message: "❌ สิทธิ์หมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่",
     });
   }
 
-  // 🎟️ ตรวจสอบ quota
+  // 📌 ตรวจ quota
   if (user.quota <= 0) {
     return res.status(401).json({
       error: "no_quota",
@@ -42,32 +43,39 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ หัก quota และเพิ่ม used_count
-  const newQuota = user.quota - 1;
-  const updated = await updateUsage(user_id, token, newQuota);
+  try {
+    // ✨ เรียก core จริง
+    const fortune = await getAstrologyPrediction(question);
 
-  if (!updated) {
+    // ✅ ถ้าได้คำตอบ → หัก quota
+    const newQuota = user.quota - 1;
+    const updated = await updateUsage(user_id, token, newQuota);
+
+    if (!updated) {
+      return res.status(500).json({
+        error: "update_failed",
+        message: "❌ ไม่สามารถอัปเดต quota ในฐานข้อมูลสมาชิกได้",
+      });
+    }
+
+    // ⚠️ แจ้งเตือน quota ใกล้หมด
+    let warning = "";
+    if (newQuota < 3) {
+      warning = `⚠️ เหลือสิทธิ์อีก ${newQuota} ครั้ง`;
+    }
+
+    return res.json({
+      success: true,
+      remaining: newQuota,
+      used: user.used_count + 1,
+      answer: fortune,
+      warning,
+    });
+  } catch (err) {
+    console.error("❌ Error calling astrology core:", err.message);
     return res.status(500).json({
-      error: "update_failed",
-      message: "❌ ไม่สามารถอัปเดตสิทธิ์ได้",
+      error: "fortune_failed",
+      message: "❌ ไม่สามารถสร้างคำทำนายได้ กรุณาลองใหม่",
     });
   }
-
-  // 🔮 ผลการทำนาย (Demo — ตรงนี้คุณสามารถเชื่อม core astrology engine ได้)
-  const fortune = `🔮 คำทำนายสำหรับ "${question}" (Demo result)`;
-
-  // ⚠️ เตือนถ้า quota ใกล้หมด
-  let warning = "";
-  if (newQuota < 3) {
-    warning = `⚠️ เหลือสิทธิ์อีกเพียง ${newQuota} ครั้ง อย่าลืมต่ออายุก่อนหมดสิทธิ์นะคะ`;
-  }
-
-  // ✅ ส่งผลลัพธ์กลับ
-  return res.json({
-    success: true,
-    remaining: newQuota,
-    used: user.used_count + 1,
-    answer: fortune,
-    warning,
-  });
 }
