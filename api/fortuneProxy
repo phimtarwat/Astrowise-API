@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   if (!user) {
     return res.status(401).json({
       error: "invalid_token",
-      message: "❌ ไม่พบผู้ใช้ กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      message: "❌ ไม่พบผู้ใช้ กรุณาซื้อแพ็กเกจใหม่ครับ",
     });
   }
 
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   if (user.expiry && today > user.expiry) {
     return res.status(401).json({
       error: "expired",
-      message: "❌ สิทธิ์หมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      message: "❌ สิทธิ์หมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่ครับ",
     });
   }
 
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   if (user.quota <= 0) {
     return res.status(401).json({
       error: "no_quota",
-      message: "❌ สิทธิ์หมดแล้ว กรุณาซื้อแพ็กเกจใหม่ค่ะ",
+      message: "❌ สิทธิ์หมดแล้ว กรุณาซื้อแพ็กเกจใหม่ครับ",
     });
   }
 
