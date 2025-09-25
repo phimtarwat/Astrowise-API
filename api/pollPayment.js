@@ -1,47 +1,53 @@
-// api/pollPayment.js
-export default async function handler(req, res) {
-  const { paymentIntentId } = req.query;
-
-  if (!paymentIntentId) {
-    return res.status(400).json({
-      error: "missing_paymentIntentId",
-      message: "❌ ต้องส่ง paymentIntentId มาด้วย",
-    });
-  }
-
-  let attempt = 0;
-  const maxAttempts = 10;   // ลองสูงสุด 10 ครั้ง
-  const delayMs = 3000;     // ทุก 3 วิ
-
-  async function wait(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  for (attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const resp = await fetch(
-        `${process.env.API_BASE_URL}/api/getLatestUser?paymentIntentId=${paymentIntentId}`
-      );
-      const data = await resp.json();
-
-      if (data.status === "paid") {
-        return res.json({
-          success: true,
-          message: `✅ การชำระเงินสำเร็จแล้วค่ะ\nuser_id=${data.userId}, token=${data.token} (${data.package}, quota ${data.quota} ครั้ง)\nหมดอายุ: ${data.expiry}`,
-          details: data,
-        });
-      }
-
-      // ยังไม่เจอ → pending → รอต่อ
-      await wait(delayMs);
-    } catch (err) {
-      console.error("❌ pollPayment error:", err.message);
-      break;
-    }
-  }
-
-  return res.status(408).json({
-    success: false,
-    message: "❌ ไม่พบข้อมูลการชำระเงินในเวลาที่กำหนด กรุณาลองใหม่ค่ะ",
-  });
-}
+/api/pollPayment:
+  get:
+    operationId: pollPayment
+    summary: Poll ตรวจสอบสถานะการจ่ายเงิน
+    description: |
+      ใช้รอผลการชำระเงินจาก Stripe  
+      ถ้า status=paid จะได้ user_id + token กลับมา
+    parameters:
+      - name: paymentIntentId
+        in: query
+        required: true
+        schema: { type: string }
+        example: "pi_3SAxxxx"
+    responses:
+      "200":
+        description: พบข้อมูลการชำระเงินแล้ว
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                success: { type: boolean, example: true }
+                message: { type: string, example: "✅ ชำระเงินสำเร็จ" }
+                details:
+                  type: object
+                  properties:
+                    userId: { type: string, example: "12345" }
+                    token: { type: string, example: "67890" }
+                    package: { type: string, example: "standard" }
+                    quota: { type: integer, example: 10 }
+                    expiry: { type: string, format: date, example: "2025-10-23" }
+                user_visible_message:
+                  type: string
+                  example: |
+                    ✅ การชำระเงินสำเร็จแล้วค่ะ
+                    🔑 โปรดบันทึกข้อมูลนี้ไว้สำหรับการใช้งาน
+                    ```
+                    user_id = 12345
+                    token   = 67890
+                    ```
+                    
+                    📦 แพ็กเกจ: standard
+                    🎟️ สิทธิ์ที่ได้รับ: 10 ครั้ง
+                    ⏳ ใช้ได้ถึง: 2025-10-23
+      "408":
+        description: ยังไม่พบข้อมูลการชำระเงิน
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                success: { type: boolean, example: false }
+                message: { type: string, example: "⌛ ยังไม่พบข้อมูลการชำระเงิน" }
