@@ -2,39 +2,47 @@
 import { findUser, updateUsage } from "../lib/googleSheet.js";
 
 export default async function handler(req, res) {
-  const { user_id, token, question } = req.body;
-
-  if (!user_id || !token || !question) {
-    return res.status(400).json({ error: "missing_fields" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  // 🔍 ตรวจสอบ user
+  const { user_id, token, question } = req.body;
+
+  // 🔎 ตรวจสอบ input
+  if (!user_id || !token || !question) {
+    return res.status(400).json({
+      error: "missing_fields",
+      message: "❌ ต้องส่ง user_id, token และ question มาด้วย",
+    });
+  }
+
+  // 🔍 หา user ใน Google Sheet
   const user = await findUser(user_id, token);
   if (!user) {
     return res.status(401).json({
       error: "invalid_token",
-      message: "❌ ไม่พบผู้ใช้ กรุณาซื้อแพ็กเกจใหม่ครับ",
+      message: "❌ ไม่พบผู้ใช้ กรุณาซื้อแพ็กเกจใหม่ค่ะ",
     });
   }
 
-  // ⏳ ตรวจวันหมดอายุ
+  // ⏳ ตรวจสอบวันหมดอายุ
   const today = new Date().toISOString().slice(0, 10);
   if (user.expiry && today > user.expiry) {
     return res.status(401).json({
       error: "expired",
-      message: "❌ สิทธิ์หมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่ครับ",
+      message: "❌ สิทธิ์ของคุณหมดอายุแล้ว กรุณาซื้อแพ็กเกจใหม่ค่ะ",
     });
   }
 
-  // 🎟️ ตรวจ quota
+  // 🎟️ ตรวจสอบ quota
   if (user.quota <= 0) {
     return res.status(401).json({
       error: "no_quota",
-      message: "❌ สิทธิ์หมดแล้ว กรุณาซื้อแพ็กเกจใหม่ครับ",
+      message: "❌ สิทธิ์หมดแล้ว กรุณาซื้อแพ็กเกจใหม่ค่ะ",
     });
   }
 
-  // ✅ หัก quota
+  // ✅ หัก quota และเพิ่ม used_count
   const newQuota = user.quota - 1;
   const updated = await updateUsage(user_id, token, newQuota);
 
@@ -45,14 +53,21 @@ export default async function handler(req, res) {
     });
   }
 
-  // 🔮 คืนผลการทำนาย (mock หรือเรียก core engine)
+  // 🔮 ผลการทำนาย (Demo — ตรงนี้คุณสามารถเชื่อม core astrology engine ได้)
   const fortune = `🔮 คำทำนายสำหรับ "${question}" (Demo result)`;
 
+  // ⚠️ เตือนถ้า quota ใกล้หมด
+  let warning = "";
+  if (newQuota < 3) {
+    warning = `⚠️ เหลือสิทธิ์อีกเพียง ${newQuota} ครั้ง อย่าลืมต่ออายุก่อนหมดสิทธิ์นะคะ`;
+  }
+
+  // ✅ ส่งผลลัพธ์กลับ
   return res.json({
     success: true,
     remaining: newQuota,
     used: user.used_count + 1,
     answer: fortune,
+    warning,
   });
 }
-
