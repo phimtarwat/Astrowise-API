@@ -45,6 +45,7 @@ export default async function handler(req, res) {
   try {
     // ✨ ใช้ AI core
     const fortune = await getAstrologyPrediction(question);
+    console.log("🔮 fortune result:", fortune); // debug log
 
     // ✅ หัก quota หลังจากได้ผลลัพธ์
     const newQuota = user.quota - 1;
@@ -62,11 +63,13 @@ export default async function handler(req, res) {
       warning = `⚠️ เหลือสิทธิ์อีก ${newQuota} ครั้ง`;
     }
 
+    // ✅ คืนค่า compat ทั้ง v1.13–v1.16
     return res.json({
       success: true,
       remaining: newQuota,
       used: user.used_count + 1,
-      answer: fortune,
+      prediction: fortune, // v1.16 ใช้ key นี้
+      answer: fortune,     // เผื่อ client เก่า (v1.13–v1.15)
       warning,
     });
   } catch (err) {
