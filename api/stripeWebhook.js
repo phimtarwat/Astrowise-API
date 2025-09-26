@@ -59,7 +59,9 @@ export default async function handler(req, res) {
     console.log("👉 Email resolved:", email);
 
     // 🔹 quota/package จาก amount_received
-    const { name: packageName, quota } = getPackageByAmount(intent.amount_received);
+    const { name: packageName, quota } = getPackageByAmount(
+      intent.amount_received
+    );
     console.log("👉 Package mapped from amount:", packageName, "=> Quota:", quota);
 
     // 🔹 expiry = 30 วันจากวันชำระเงิน
@@ -104,7 +106,9 @@ export default async function handler(req, res) {
 
       // 🔹 Push message กลับไปที่ GPT Chat
       try {
-        const resp = await fetch(`${process.env.BASE_URL}/api/pushMessage`, {
+        const baseUrl =
+          process.env.BASE_URL || "https://astrowise-api.vercel.app"; // fallback
+        const resp = await fetch(`${baseUrl}/api/pushMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -115,6 +119,11 @@ export default async function handler(req, res) {
             expiry,
           }),
         });
+
+        if (!resp.ok) {
+          throw new Error(`pushMessage failed with status ${resp.status}`);
+        }
+
         const data = await resp.json();
         console.log("✅ pushMessage response:", data);
       } catch (err) {
