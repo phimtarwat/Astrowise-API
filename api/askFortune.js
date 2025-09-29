@@ -117,12 +117,19 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ 5) ตอบคำทำนาย (mock GPT)
-    return res.status(200).json({
+    // ✅ 5) เตรียม response
+    const response = {
       success: true,
       remaining: newQuota,
       answer: `🔮 คำทำนายสำหรับคำถาม "${question}" คือ... (นี่คือ mock answer, ต่อไปจะต่อ GPT)`,
-    });
+    };
+
+    // ✅ 6) เพิ่ม warning ถ้า quota < 3
+    if (newQuota < 3) {
+      response.warning = `⚠️ เหลือสิทธิ์อีกเพียง ${newQuota} ครั้ง อย่าลืมต่ออายุก่อนหมดสิทธิ์นะคะ`;
+    }
+
+    return res.status(200).json(response);
   } catch (err) {
     console.error("❌ askFortune failed:", err.message);
     return res.status(500).json({
