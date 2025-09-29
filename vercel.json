@@ -1,10 +1,8 @@
 {
   "version": 2,
-  "functions": {
-    "api/*.js": {
-      "runtime": "nodejs18.x"
-    }
-  },
+  "builds": [
+    { "src": "api/*.js", "use": "@vercel/node" }
+  ],
   "routes": [
     { "src": "/api/registerUser", "dest": "/api/registerUser.js" },
     { "src": "/api/checkToken", "dest": "/api/checkToken.js" },
