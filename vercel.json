@@ -6,6 +6,10 @@
     }
   },
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1.js" }
+    { "src": "/api/registerUser", "dest": "/api/registerUser.js" },
+    { "src": "/api/checkToken", "dest": "/api/checkToken.js" },
+    { "src": "/api/askFortune", "dest": "/api/askFortune.js" },
+    { "src": "/api/stripeWebhook", "dest": "/api/stripeWebhook.js" },
+    { "src": "/api/pushMessage", "dest": "/api/pushMessage.js" }
   ]
 }
