@@ -1,68 +1,74 @@
-// api/checkToken.js
 import { findUser } from "../lib/googleSheet.js";
+import { google } from "googleapis";
+
+async function updateQuota(user_id, token, newQuota, newUsedCount) {
+  const auth = new google.auth.GoogleAuth({
+    credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY),
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  const sheets = google.sheets({ version: "v4", auth });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const range = "Members!A:K";
+
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  const rows = resp.data.values;
+  const header = rows[0];
+  const userIdIndex = header.indexOf("user_id");
+  const tokenIndex = header.indexOf("token");
+  const quotaIndex = header.indexOf("quota");
+  const usedIndex = header.indexOf("used_count");
+
+  let rowIndex = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][userIdIndex] === user_id && rows[i][tokenIndex] === token) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+  if (rowIndex === -1) return false;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `Members!${String.fromCharCode(65 + quotaIndex)}${rowIndex}:${
+      String.fromCharCode(65 + usedIndex)
+    }${rowIndex}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[newQuota, newUsedCount]] },
+  });
+
+  return true;
+}
 
 export default async function handler(req, res) {
-  try {
-    // ✅ 1) บังคับใช้ GET เท่านั้น
-    if (req.method !== "GET") {
-      return res.status(405).json({
-        status: "error",
-        message: "❌ Method not allowed, ต้องใช้ GET เท่านั้น",
-      });
-    }
+  if (req.method !== "POST") return res.status(405).json({ success: false, message: "❌ ต้องใช้ POST" });
 
-    // ✅ 2) รับค่าและ normalize
-    const { user_id, token, mode } = req.query;
-    const uid = String(user_id || "").trim();
-    const tkn = String(token || "").trim();
+  const { user_id, token, question } = req.body || {};
+  if (!user_id || !token || !question) return res.status(400).json({ success: false, message: "❌ input ไม่ครบ" });
 
-    // ✅ 3) ต้องมี mode=check เท่านั้น
-    if (mode !== "check") {
-      return res.status(400).json({
-        status: "error",
-        message: "❌ ต้องระบุ mode=check เท่านั้น",
-      });
-    }
+  const user = await findUser(user_id, token);
+  if (!user) return res.status(401).json({ success: false, message: "❌ user_id หรือ token ไม่ถูกต้อง" });
 
-    // ✅ 4) ป้องกัน input แปลก ๆ
-    const safeId = /^u[0-9]+$/.test(uid);          // user_id ต้องขึ้นต้นด้วย u + ตัวเลข
-    const safeToken = /^[A-Za-z0-9_-]+$/.test(tkn); // token ต้องเป็น a-zA-Z0-9_- เท่านั้น
+  if (!user.package) return res.status(401).json({ success: false, message: "❌ ยังไม่ได้ซื้อแพ็กเกจ" });
 
-    if (!safeId || !safeToken) {
-      return res.status(400).json({
-        status: "error",
-        message: "❌ user_id หรือ token ไม่ถูกต้อง",
-      });
-    }
+  if (user.expiry && new Date() > new Date(user.expiry)) {
+    return res.status(401).json({ success: false, message: "❌ สิทธิ์หมดอายุแล้ว" });
+  }
 
-    // ✅ 5) ค้นหา user ใน Google Sheet
-    const user = await findUser(uid, tkn);
-    if (!user) {
-      return res.status(401).json({
-        status: "invalid",
-        message: "❌ ไม่พบข้อมูลสมาชิก หรือ token ไม่ถูกต้อง",
-      });
-    }
+  if (user.quota <= 0) {
+    return res.status(401).json({ success: false, message: "❌ สิทธิ์ของคุณหมดแล้ว" });
+  }
 
-    // ✅ 6) ตรวจสอบ quota และ expiry
-    const today = new Date();
-    let isExpired = false;
-    if (user.expiry) {
-      const expDate = new Date(user.expiry);
-      if (today > expDate) {
-        isExpired = true;
-      }
-    }
+  const newQuota = user.quota - 1;
+  const newUsedCount = (user.used_count || 0) + 1;
+  const updated = await updateQuota(user.user_id, user.token, newQuota, newUsedCount);
+  if (!updated) return res.status(500).json({ success: false, message: "❌ อัปเดต quota ไม่สำเร็จ" });
 
-    if (isExpired) {
-      return res.status(401).json({
-        status: "expired",
-        message: "❌ สิทธิ์หมดอายุแล้ว",
-      });
-    }
+  const response = {
+    success: true,
+    remaining: newQuota,
+    answer: `🔮 คำทำนายสำหรับ "${question}" คือ... (mock answer)`,
+  };
+  if (newQuota < 3) response.warning = `⚠️ เหลือสิทธิ์อีกเพียง ${newQuota} ครั้ง`;
 
-    if (user.quota <= 0) {
-      return res.status(200).json({
-        status: "no_quota",
-        packages: {
-          lite: "👉 [ซื]()
+  return res.status(200).json(response);
+}
