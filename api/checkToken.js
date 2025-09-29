@@ -24,7 +24,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ 4) ป้องกัน input แปลก ๆ (เช่น script injection)
+    // ✅ 4) ป้องกัน input แปลก ๆ (script injection / invalid format)
     const safeId = /^[0-9]+$/.test(uid);
     const safeToken = /^[A-Za-z0-9_-]+$/.test(tkn);
     if (!safeId || !safeToken) {
@@ -34,7 +34,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ 5) หา user
+    // ✅ 5) หา user จาก Google Sheet
     const user = await findUser(uid, tkn);
     if (!user) {
       return res.status(401).json({
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ 8) Success
+    // ✅ 8) Success → ใช้งานได้
     console.log("✅ checkToken success:", {
       user_id: user.user_id,
       package: user.package,
