@@ -32,49 +32,35 @@ export default async function handler(req, res) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  if (event.type === "payment_intent.succeeded") {
-    const intent = event.data.object;
-    console.log("✅ Stripe webhook received:", intent.id);
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+    console.log("✅ Stripe webhook received:", session.id);
 
-    // 🔹 ดึง user_id + token จาก metadata
-    const userId = intent.metadata?.user_id;
-    const token = intent.metadata?.token;
+    const userId = session.metadata?.user_id;
+    const token = session.metadata?.token;
 
     if (!userId || !token) {
-      console.error("❌ Missing user_id or token in Stripe metadata");
-      return res.status(400).json({
-        success: false,
-        message: "❌ user_id หรือ token หายไปจาก metadata",
-      });
+      console.error("❌ Missing user_id/token in metadata");
+      return res.status(400).json({ success: false });
     }
 
-    // 🔹 quota/package จาก amount_received
+    // quota/package จาก amount_total (หรือ mapping จาก priceId)
     const { name: packageName, quota } = getPackageByAmount(
-      intent.amount_received
-    );
-    console.log(
-      "👉 Package mapped from amount:",
-      packageName,
-      "=> Quota:",
-      quota
+      session.amount_total
     );
 
-    // 🔹 expiry = 30 วันจากวันชำระเงิน
     const exp = new Date();
     exp.setDate(exp.getDate() + 30);
     const expiry = exp.toISOString().slice(0, 10);
 
-    console.log("👉 Expiry date set:", expiry);
-
-    // 🔹 update user เดิมใน Google Sheet
     const ok = await updateUser({
       userId,
       token,
       quota,
       packageName,
       expiry,
-      payment_intent_id: intent.id,
-      receipt_url: intent.charges?.data?.[0]?.receipt_url || null,
+      payment_intent_id: session.payment_intent,
+      receipt_url: session.payment_status === "paid" ? session.url : null,
       paid_at: new Date().toISOString(),
     });
 
@@ -88,7 +74,6 @@ export default async function handler(req, res) {
 
     console.log("✅ updateUser success for user:", { userId, token });
 
-    // ✅ ตอบ Stripe
     return res.json({
       success: true,
       message: "✅ การชำระเงินสำเร็จและสิทธิ์ถูกอัปเดตแล้วค่ะ",
