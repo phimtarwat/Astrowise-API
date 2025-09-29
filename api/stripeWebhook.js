@@ -11,6 +11,25 @@ const PACKAGE_CONFIG = {
   premium: { quota: 30 },
 };
 
+// ✅ ปิด bodyParser เพื่อใช้ raw body
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+/**
+ * Helper: แปลง index → column name (รองรับเกิน Z เช่น AA, AB)
+ */
+function toColumnName(index) {
+  let s = "";
+  while (index >= 0) {
+    s = String.fromCharCode((index % 26) + 65) + s;
+    index = Math.floor(index / 26) - 1;
+  }
+  return s;
+}
+
 /**
  * updateUserQuota - update quota/expiry ใน Google Sheet
  */
@@ -57,11 +76,13 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
   const receiptUrlIndex = header.indexOf("receipt_url");
   const paidAtIndex = header.indexOf("paid_at");
 
+  // ✅ ใช้ helper แปลง column index → A1 notation
+  const startCol = toColumnName(packageIndex);
+  const endCol = toColumnName(paidAtIndex);
+
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `Members!${String.fromCharCode(65 + packageIndex)}${rowIndex}:${
-      String.fromCharCode(65 + paidAtIndex)
-    }${rowIndex}`,
+    range: `Members!${startCol}${rowIndex}:${endCol}${rowIndex}`,
     valueInputOption: "RAW",
     requestBody: {
       values: [[
@@ -84,8 +105,15 @@ export default async function handler(req, res) {
 
   try {
     // ✅ ตรวจสอบ webhook signature
+    const buf = await new Promise((resolve, reject) => {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", reject);
+    });
+
     event = stripe.webhooks.constructEvent(
-      req.rawBody, // ต้องเปิด raw body ใน config ของ Next.js API
+      buf,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
@@ -103,7 +131,8 @@ export default async function handler(req, res) {
       const packageName = session.metadata?.packageName;
 
       const payment_intent_id = session.payment_intent;
-      const receipt_url = session?.charges?.data?.[0]?.receipt_url || null;
+      const receipt_url =
+        session.invoice_url || session.invoice?.hosted_invoice_url || null;
 
       if (!user_id || !token || !packageName) {
         console.error("❌ Metadata missing in session:", session.id);
