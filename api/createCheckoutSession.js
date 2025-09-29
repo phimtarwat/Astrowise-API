@@ -19,9 +19,9 @@ export default async function handler(req, res) {
 
   // mapping package → Stripe price ID
   const priceMap = {
-    lite: "price_xxxx",      // ใส่ Price ID ของคุณจาก Stripe Dashboard
-    standard: "price_yyyy",
-    premium: "price_zzzz",
+    lite: "price_1S8FjEKBKfkzmqyipUNaXIow",      // ใส่ Price ID ของคุณจาก Stripe Dashboard
+    standard: "price_1S8FkRKBKfkzmqyizRRfY5XX",
+    premium: "price_1S8FmmKBKfkzmqyiN75u0Xfs",
   };
 
   const priceId = priceMap[packageName];
