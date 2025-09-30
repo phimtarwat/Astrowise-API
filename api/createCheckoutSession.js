@@ -2,7 +2,7 @@ import Stripe from "stripe";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export default async function handler(req, res) {
-  // ✅ รองรับแค่ POST
+  // ✅ รองรับเฉพาะ POST
   if (req.method !== "POST") {
     return res.status(405).json({
       status: "error",
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   try {
     const { user_id, token, packageName } = req.body || {};
 
-    // ✅ ตรวจ input
+    // ✅ ตรวจสอบ input
     if (!user_id || !token || !packageName) {
       return res.status(400).json({
         status: "error",
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ ตรวจ packageName → mapping ไปที่ Stripe Price ID
+    // ✅ Mapping package → Stripe Price ID
     const packageMap = {
       lite: process.env.STRIPE_PRICE_LITE,
       standard: process.env.STRIPE_PRICE_STANDARD,
@@ -35,17 +35,17 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ สร้าง Checkout Session พร้อม metadata
+    // ✅ สร้าง Checkout Session
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [{ price: packageMap[packageName], quantity: 1 }],
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.BASE_URL}/cancel`,
       metadata: { user_id, token, packageName },
-      automatic_payment_methods: { enabled: true }, // ✅ รองรับ card + wallet
+      automatic_payment_methods: { enabled: true }, // รองรับ card + wallet
     });
 
-    // ✅ ส่ง checkout_url กลับ
+    // ✅ ต้องใช้ session.url เท่านั้น
     return res.status(200).json({
       status: "valid",
       checkout_url: session.url,
