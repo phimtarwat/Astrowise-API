@@ -18,11 +18,13 @@ export default async function handler(req, res) {
       });
     }
 
+    // ✅ Mapping Price IDs จาก ENV
     const packageMap = {
       lite: process.env.STRIPE_PRICE_LITE,
       standard: process.env.STRIPE_PRICE_STANDARD,
       premium: process.env.STRIPE_PRICE_PREMIUM,
     };
+
     if (!packageMap[packageName]) {
       return res.status(400).json({
         status: "error",
@@ -30,21 +32,38 @@ export default async function handler(req, res) {
       });
     }
 
+    console.log("👉 Creating checkout session with:", {
+      packageName,
+      priceId: packageMap[packageName],
+      user_id,
+      token,
+    });
+
+    // ✅ Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [{ price: packageMap[packageName], quantity: 1 }],
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.BASE_URL}/cancel`,
-      metadata: { user_id, token, packageName }, // ✅ ต้องมีครบ
+      metadata: { user_id, token, packageName }, // สำคัญมาก
       automatic_payment_methods: { enabled: true },
     });
 
+    console.log("✅ Stripe session created:", session);
+
+    // ✅ ต้องใช้ session.url เท่านั้น
     return res.status(200).json({
       status: "valid",
-      checkout_url: session.url, // ✅ ใช้ session.url
+      checkout_url: session.url,
+      debug: {
+        id: session.id,
+        url: session.url,
+        payment_status: session.payment_status,
+        amount_total: session.amount_total,
+      },
     });
   } catch (err) {
-    console.error("❌ createCheckoutSession failed:", err.message);
+    console.error("❌ createCheckoutSession failed:", err);
     return res.status(500).json({
       status: "error",
       message: "❌ ไม่สามารถสร้าง Checkout Session ได้",
