@@ -11,13 +11,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { user_id, token, packageName } = req.body || {};
+    let { user_id, token, packageName } = req.body || {};
     if (!user_id || !token || !packageName) {
       return res.status(400).json({
         status: "error",
         message: "❌ ต้องส่ง user_id, token และ packageName",
       });
     }
+
+    // ✅ normalize ให้เป็นตัวเล็กเสมอ
+    packageName = packageName.toLowerCase();
 
     const packageMap = {
       lite: process.env.STRIPE_PRICE_LITE,
@@ -28,7 +31,7 @@ export default async function handler(req, res) {
     if (!packageMap[packageName]) {
       return res.status(400).json({
         status: "error",
-        message: "❌ packageName ไม่ถูกต้อง (lite, standard, premium)",
+        message: `❌ packageName ไม่ถูกต้อง (ส่งมา: ${packageName})`,
       });
     }
 
@@ -37,11 +40,11 @@ export default async function handler(req, res) {
       line_items: [{ price: packageMap[packageName], quantity: 1 }],
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.BASE_URL}/cancel`,
-      metadata: { user_id, token, packageName }, // สำคัญ: เก็บ reference
+      metadata: { user_id, token, packageName },
       automatic_payment_methods: { enabled: true },
     });
 
-    // ✅ ตรงตาม OpenAPI: status + checkout_url
+    // ✅ ตอบกลับตรงตาม OpenAPI spec
     return res.status(200).json({
       status: "valid",
       checkout_url: session.url,
