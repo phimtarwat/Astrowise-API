@@ -33,8 +33,11 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
     }
     if (rowIndex === -1) return false;
 
+    // ✅ normalize packageName เป็นตัวเล็กเสมอ
+    const normalized = packageName.toLowerCase();
+
     const quotaMap = { lite: 10, standard: 30, premium: 100 };
-    const quota = quotaMap[packageName] || 0;
+    const quota = quotaMap[normalized] || 0;
     const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // +30 วัน
       .toISOString()
       .split("T")[0];
@@ -54,7 +57,7 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
       valueInputOption: "RAW",
       requestBody: {
         values: [[
-          packageName,
+          normalized, // ใช้ packageName ตัวเล็ก
           quota,
           expiry,
           payment_intent_id,
@@ -64,7 +67,7 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
       },
     });
 
-    return { quota, package: packageName, expiry };
+    return { quota, package: normalized, expiry };
   } catch (err) {
     console.error("❌ updateUserQuota failed:", err.message);
     return false;
@@ -88,7 +91,6 @@ export default async function handler(req, res) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // ✅ รองรับ event เดียว
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const { user_id, token, packageName } = session.metadata || {};
@@ -102,7 +104,7 @@ export default async function handler(req, res) {
     const updated = await updateUserQuota({
       user_id,
       token,
-      packageName,
+      packageName, // ส่งค่าเดิมไป normalize ด้านใน
       payment_intent_id: session.payment_intent,
       receipt_url,
     });
@@ -117,7 +119,7 @@ export default async function handler(req, res) {
       user_id,
       token,
       quota: updated.quota,
-      package: updated.package,
+      package: updated.package, // คืนค่าที่ normalize แล้ว
       expiry: updated.expiry,
     });
   }
