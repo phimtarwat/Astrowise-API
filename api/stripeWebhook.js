@@ -1,3 +1,4 @@
+// api/stripeWebhook.js
 import Stripe from "stripe";
 import { google } from "googleapis";
 
@@ -14,6 +15,7 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
 
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     const range = "Members!A:K";
+
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
     const rows = resp.data.values;
     if (!rows || rows.length === 0) return false;
@@ -21,10 +23,11 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
     const header = rows[0];
     const userIdIndex = header.indexOf("user_id");
     const tokenIndex = header.indexOf("token");
+
     let rowIndex = -1;
     for (let i = 1; i < rows.length; i++) {
       if (rows[i][userIdIndex] === user_id && rows[i][tokenIndex] === token) {
-        rowIndex = i + 1;
+        rowIndex = i + 1; // +1 เพราะ header อยู่แถวแรก
         break;
       }
     }
@@ -32,7 +35,9 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
 
     const quotaMap = { lite: 10, standard: 30, premium: 100 };
     const quota = quotaMap[packageName] || 0;
-    const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // +30 วัน
+      .toISOString()
+      .split("T")[0];
 
     const packageIndex = header.indexOf("package");
     const quotaIndex = header.indexOf("quota");
@@ -43,16 +48,18 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
 
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Members!${String.fromCharCode(65 + packageIndex)}${rowIndex}:${String.fromCharCode(65 + paidAtIndex)}${rowIndex}`,
+      range: `Members!${String.fromCharCode(65 + packageIndex)}${rowIndex}:${String.fromCharCode(
+        65 + paidAtIndex
+      )}${rowIndex}`,
       valueInputOption: "RAW",
       requestBody: {
         values: [[
-          packageName, // 👈 เขียน packageName ลง column "package"
+          packageName,
           quota,
           expiry,
           payment_intent_id,
           receipt_url,
-          new Date().toISOString()
+          new Date().toISOString(),
         ]],
       },
     });
@@ -67,6 +74,7 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
 export default async function handler(req, res) {
   const sig = req.headers["stripe-signature"];
   let event;
+
   try {
     const buf = await new Promise((resolve, reject) => {
       let data = "";
@@ -80,9 +88,11 @@ export default async function handler(req, res) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // ✅ รองรับ event เดียว
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const { user_id, token, packageName } = session.metadata || {};
+
     if (!user_id || !token || !packageName) {
       console.error("❌ Metadata missing:", session.metadata);
       return res.status(400).json({ status: "error", message: "❌ Metadata missing" });
@@ -112,5 +122,5 @@ export default async function handler(req, res) {
     });
   }
 
-  return res.json({ received: true });
+  return res.json({ received: true }); // ignore event อื่น
 }
