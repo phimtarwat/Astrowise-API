@@ -2,13 +2,8 @@ import Stripe from "stripe";
 import { google } from "googleapis";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-// ✅ ปิด bodyParser เพื่อให้ Stripe verify signature ได้
 export const config = { api: { bodyParser: false } };
 
-/**
- * updateUserQuota - update ข้อมูล user หลังจากจ่ายเงินสำเร็จ
- */
 async function updateUserQuota({ user_id, token, packageName, payment_intent_id, receipt_url }) {
   try {
     const auth = new google.auth.GoogleAuth({
@@ -19,62 +14,40 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
 
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     const range = "Members!A:K";
-
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
     const rows = resp.data.values;
-    if (!rows || rows.length === 0) {
-      console.error("❌ No rows found in sheet");
-      return false;
-    }
+    if (!rows || rows.length === 0) return false;
 
     const header = rows[0];
     const userIdIndex = header.indexOf("user_id");
     const tokenIndex = header.indexOf("token");
-
     let rowIndex = -1;
     for (let i = 1; i < rows.length; i++) {
       if (rows[i][userIdIndex] === user_id && rows[i][tokenIndex] === token) {
-        rowIndex = i + 1; // Google Sheet index เริ่มที่ 1
+        rowIndex = i + 1;
         break;
       }
     }
-    if (rowIndex === -1) {
-      console.error("❌ User not found in sheet:", user_id, token);
-      return false;
-    }
+    if (rowIndex === -1) return false;
 
-    // ✅ quota mapping ตาม package
     const quotaMap = { lite: 10, standard: 30, premium: 100 };
     const quota = quotaMap[packageName] || 0;
-    const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // +30 วัน
-      .toISOString()
-      .split("T")[0];
+    const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-    // ✅ หาตำแหน่ง column ที่ต้อง update
-    const packageIndex = header.indexOf("package"); // 👈 ใช้ package (ไม่ใช่ packageName)
+    const packageIndex = header.indexOf("package");
     const quotaIndex = header.indexOf("quota");
     const expiryIndex = header.indexOf("expiry");
     const paymentIntentIndex = header.indexOf("payment_intent_id");
     const receiptUrlIndex = header.indexOf("receipt_url");
     const paidAtIndex = header.indexOf("paid_at");
 
-    console.log("👉 Updating row", rowIndex, {
-      package: packageName,
-      quota,
-      expiry,
-      payment_intent_id,
-      receipt_url,
-    });
-
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Members!${String.fromCharCode(65 + packageIndex)}${rowIndex}:${
-        String.fromCharCode(65 + paidAtIndex)
-      }${rowIndex}`,
+      range: `Members!${String.fromCharCode(65 + packageIndex)}${rowIndex}:${String.fromCharCode(65 + paidAtIndex)}${rowIndex}`,
       valueInputOption: "RAW",
       requestBody: {
         values: [[
-          packageName, // 👈 เขียนค่า packageName ลง column "package"
+          packageName, // 👈 เขียน packageName ลง column "package"
           quota,
           expiry,
           payment_intent_id,
@@ -94,7 +67,6 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
 export default async function handler(req, res) {
   const sig = req.headers["stripe-signature"];
   let event;
-
   try {
     const buf = await new Promise((resolve, reject) => {
       let data = "";
@@ -102,7 +74,6 @@ export default async function handler(req, res) {
       req.on("end", () => resolve(Buffer.from(data)));
       req.on("error", reject);
     });
-
     event = stripe.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     console.error("❌ Webhook signature verification failed:", err.message);
@@ -111,16 +82,13 @@ export default async function handler(req, res) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
-    console.log("👉 Session received:", session.id);
-
     const { user_id, token, packageName } = session.metadata || {};
     if (!user_id || !token || !packageName) {
-      console.error("❌ Metadata missing in session:", session.id, session.metadata);
+      console.error("❌ Metadata missing:", session.metadata);
       return res.status(400).json({ status: "error", message: "❌ Metadata missing" });
     }
 
     const receipt_url = session?.charges?.data?.[0]?.receipt_url || null;
-
     const updated = await updateUserQuota({
       user_id,
       token,
@@ -139,7 +107,7 @@ export default async function handler(req, res) {
       user_id,
       token,
       quota: updated.quota,
-      package: updated.package, // 👈 ตรงกับ core v2.2
+      package: updated.package,
       expiry: updated.expiry,
     });
   }
