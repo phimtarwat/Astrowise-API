@@ -3,7 +3,7 @@ import { google } from "googleapis";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// ✅ ต้องปิด bodyParser เพื่อ Stripe ตรวจ signature ได้
+// ✅ ปิด bodyParser เพื่อให้ Stripe verify signature ได้
 export const config = { api: { bodyParser: false } };
 
 /**
@@ -50,7 +50,8 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
       .toISOString()
       .split("T")[0];
 
-    const packageIndex = header.indexOf("package");
+    // ✅ หาตำแหน่ง column ที่ต้อง update
+    const packageIndex = header.indexOf("package"); // 👈 ใช้ package (ไม่ใช่ packageName)
     const quotaIndex = header.indexOf("quota");
     const expiryIndex = header.indexOf("expiry");
     const paymentIntentIndex = header.indexOf("payment_intent_id");
@@ -58,7 +59,7 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
     const paidAtIndex = header.indexOf("paid_at");
 
     console.log("👉 Updating row", rowIndex, {
-      packageName,
+      package: packageName,
       quota,
       expiry,
       payment_intent_id,
@@ -73,7 +74,7 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
       valueInputOption: "RAW",
       requestBody: {
         values: [[
-          packageName,
+          packageName, // 👈 เขียนค่า packageName ลง column "package"
           quota,
           expiry,
           payment_intent_id,
@@ -83,7 +84,7 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
       },
     });
 
-    return { quota, packageName, expiry };
+    return { quota, package: packageName, expiry };
   } catch (err) {
     console.error("❌ updateUserQuota failed:", err.message);
     return false;
@@ -138,7 +139,7 @@ export default async function handler(req, res) {
       user_id,
       token,
       quota: updated.quota,
-      package: updated.packageName,
+      package: updated.package, // 👈 ตรงกับ core v2.2
       expiry: updated.expiry,
     });
   }
