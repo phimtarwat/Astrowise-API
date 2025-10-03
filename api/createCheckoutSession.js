@@ -41,8 +41,7 @@ export default async function handler(req, res) {
       success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.BASE_URL}/cancel`,
       metadata: { user_id, token, packageName },
-      automatic_payment_methods: { enabled: true },
-    });
+          });
 
     // ✅ ตอบกลับตรงตาม OpenAPI spec
     return res.status(200).json({
