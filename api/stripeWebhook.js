@@ -27,39 +27,47 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
     let rowIndex = -1;
     for (let i = 1; i < rows.length; i++) {
       if (rows[i][userIdIndex] === user_id && rows[i][tokenIndex] === token) {
-        rowIndex = i + 1; // +1 เพราะ header อยู่แถวแรก
+        rowIndex = i + 1;
         break;
       }
     }
     if (rowIndex === -1) return false;
 
-    // ✅ normalize packageName
     const normalized = packageName.toLowerCase();
 
-    // ✅ ใช้ quota map เดียวกับ packageConfig.js
+    // ✅ ปรับ quotaMap ให้ตรงกับ packageConfig
     const quotaMap = { lite: 5, standard: 10, premium: 30 };
     const quota = quotaMap[normalized] || 0;
-    const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // +30 วัน
+    const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0];
 
-    // ✅ update E..K (package → paid_at)
+    const packageIndex = header.indexOf("package");
+    const quotaIndex = header.indexOf("quota");
+    const expiryIndex = header.indexOf("expiry");
+    const paymentIntentIndex = header.indexOf("payment_intent_id");
+    const receiptUrlIndex = header.indexOf("receipt_url");
+    const paidAtIndex = header.indexOf("paid_at");
+
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Members!E${rowIndex}:K${rowIndex}`,
+      range: `Members!${String.fromCharCode(65 + packageIndex)}${rowIndex}:${String.fromCharCode(
+        65 + paidAtIndex
+      )}${rowIndex}`,
       valueInputOption: "RAW",
       requestBody: {
         values: [[
-          normalized, // E: package
-          quota,      // F: quota
-          expiry,     // G: expiry
-          payment_intent_id, // H: payment_intent_id
-          receipt_url,       // I: receipt_url
-          new Date().toISOString(), // J: paid_at
+          normalized,
+          quota,
+          expiry,
+          payment_intent_id,
+          receipt_url,
+          new Date().toISOString(),
         ]],
       },
     });
 
+    console.log(`✅ Updated quota=${quota}, package=${normalized} for user=${user_id}`);
     return { quota, package: normalized, expiry };
   } catch (err) {
     console.error("❌ updateUserQuota failed:", err.message);
@@ -93,19 +101,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ status: "error", message: "❌ Metadata missing" });
     }
 
-    // ✅ ดึง receipt_url จาก PaymentIntent โดยตรง
-    let receipt_url = null;
-    try {
-      if (session.payment_intent) {
-        const pi = await stripe.paymentIntents.retrieve(session.payment_intent, {
-          expand: ["charges.data.receipt_url"],
-        });
-        receipt_url = pi.charges?.data?.[0]?.receipt_url || null;
-      }
-    } catch (err) {
-      console.warn("⚠️ Cannot fetch paymentIntent:", err.message);
-    }
-
+    const receipt_url = session?.charges?.data?.[0]?.receipt_url || null;
     const updated = await updateUserQuota({
       user_id,
       token,
@@ -129,5 +125,5 @@ export default async function handler(req, res) {
     });
   }
 
-  return res.json({ received: true }); // ignore event อื่น
+  return res.json({ received: true });
 }
