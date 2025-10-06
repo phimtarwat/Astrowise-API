@@ -1,3 +1,4 @@
+// api/checkToken.js
 import { findUser } from "../lib/googleSheet.js";
 
 export default async function handler(req, res) {
@@ -37,6 +38,19 @@ export default async function handler(req, res) {
     return res.status(401).json({
       status: "expired",
       message: "❌ สิทธิ์หมดอายุแล้ว",
+    });
+  }
+
+  // ✅ เพิ่มกรณี no_package
+  if (!user.package) {
+    return res.status(200).json({
+      status: "no_package",
+      message: "❌ ยังไม่ได้ซื้อแพ็กเกจ",
+      packages: {
+        lite: "👉 [ซื้อ Lite](https://...)",
+        standard: "👉 [ซื้อ Standard](https://...)",
+        premium: "👉 [ซื้อ Premium](https://...)",
+      },
     });
   }
 
