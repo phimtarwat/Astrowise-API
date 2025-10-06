@@ -9,6 +9,5 @@
     { "src": "/api/askFortune", "dest": "/api/askFortune.js" },
     { "src": "/api/stripeWebhook", "dest": "/api/stripeWebhook.js" },
     { "src": "/api/pushMessage", "dest": "/api/pushMessage.js" }
-    { "src": "/api/health", "dest": "/api/health.js" }
-  ]
+      ]
 }
