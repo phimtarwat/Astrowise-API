@@ -1,7 +1,10 @@
 // api/askFortune.js
-import { findUser } from "../lib/googleSheet.js";
+import { findUser, logUsage } from "../lib/googleSheet.js";
 import { google } from "googleapis";
 
+/**
+ * อัปเดต quota และ used_count ใน Google Sheet
+ */
 async function updateQuota(user_id, token, newQuota, newUsedCount) {
   try {
     const auth = new google.auth.GoogleAuth({
@@ -20,8 +23,6 @@ async function updateQuota(user_id, token, newQuota, newUsedCount) {
     const header = rows[0];
     const userIdIndex = header.indexOf("user_id");
     const tokenIndex = header.indexOf("token");
-    const quotaIndex = header.indexOf("quota");
-    const usedIndex = header.indexOf("used_count");
 
     let rowIndex = -1;
     for (let i = 1; i < rows.length; i++) {
@@ -32,7 +33,7 @@ async function updateQuota(user_id, token, newQuota, newUsedCount) {
     }
     if (rowIndex === -1) return false;
 
-    // ✅ แปลงค่าที่อัปเดตเป็น string
+    // ✅ อัปเดต quota และ used_count (C:D)
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `Members!C${rowIndex}:D${rowIndex}`,
@@ -48,6 +49,10 @@ async function updateQuota(user_id, token, newQuota, newUsedCount) {
   }
 }
 
+/**
+ * API: /api/askFortune
+ * ใช้สิทธิ์ถามดวง 1 ครั้ง + หัก quota + บันทึก log
+ */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ status: "error", message: "❌ ต้องใช้ POST" });
@@ -55,20 +60,32 @@ export default async function handler(req, res) {
 
   const { user_id, token, question } = req.body || {};
   if (!user_id || !token || !question) {
-    return res.status(400).json({ status: "error", message: "❌ ต้องส่ง user_id, token และ question" });
+    return res.status(400).json({
+      status: "error",
+      message: "❌ ต้องส่ง user_id, token และ question"
+    });
   }
 
   const user = await findUser(user_id, token);
   if (!user) {
-    return res.status(401).json({ status: "invalid", message: "❌ user_id หรือ token ไม่ถูกต้อง" });
+    return res.status(401).json({
+      status: "invalid",
+      message: "❌ user_id หรือ token ไม่ถูกต้อง"
+    });
   }
 
   if (!user.package) {
-    return res.status(401).json({ status: "no_package", message: "❌ ยังไม่ได้ซื้อแพ็กเกจ" });
+    return res.status(401).json({
+      status: "no_package",
+      message: "❌ ยังไม่ได้ซื้อแพ็กเกจ"
+    });
   }
 
   if (user.expiry && new Date() > new Date(user.expiry)) {
-    return res.status(401).json({ status: "expired", message: "❌ สิทธิ์หมดอายุแล้ว" });
+    return res.status(401).json({
+      status: "expired",
+      message: "❌ สิทธิ์หมดอายุแล้ว"
+    });
   }
 
   if (user.quota <= 0) {
@@ -82,14 +99,21 @@ export default async function handler(req, res) {
     });
   }
 
+  // ✅ หักสิทธิ์ 1 ครั้ง
   const newQuota = user.quota - 1;
   const newUsedCount = (user.used_count || 0) + 1;
   const updated = await updateQuota(user.user_id, user.token, newQuota, newUsedCount);
   if (!updated) {
-    return res.status(500).json({ status: "error", message: "❌ อัปเดต quota ไม่สำเร็จ" });
+    return res.status(500).json({
+      status: "error",
+      message: "❌ อัปเดต quota ไม่สำเร็จ"
+    });
   }
 
-  // ✅ เปลี่ยน mock answer ให้ผ่านระบบจริง
+  // ✅ บันทึก log การใช้งาน (UsageLog sheet)
+  await logUsage(user.user_id, user.token, question, newQuota, user.package);
+
+  // ✅ ตอบกลับผลคำทำนาย
   const response = {
     status: "valid",
     remaining: newQuota,
@@ -100,5 +124,6 @@ export default async function handler(req, res) {
     response.warning = `⚠️ เหลือสิทธิ์อีกเพียง ${newQuota} ครั้ง`;
   }
 
+  console.log(`🎯 AskFortune: user=${user_id} → remaining=${newQuota}`);
   return res.status(200).json(response);
 }
