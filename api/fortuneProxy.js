@@ -1,13 +1,14 @@
 // api/fortuneProxy.js
 import { findUser, updateUsage } from "../lib/googleSheet.js";
-import { getAstrologyPrediction } from "../lib/astrologyCore.js";
+import { getAstrologyPrediction } from "../lib/astrologyCoreAI.js"; // ✅ rename แล้ว
+import { calcAstroChart } from "../lib/astrologyCoreCalc.js";       // ✅ ใช้ดึงข้อมูลดวงดาวจริง
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  const { user_id, token, question } = req.body;
+  const { user_id, token, question, birth } = req.body || {};
 
   // 🚨 ตรวจ input
   if (!user_id || !token || !question) {
@@ -44,7 +45,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ✨ ดึงคำทำนายจาก core
+    // 🪐 ถ้ามีข้อมูลวัน–เวลา–สถานที่เกิด → คำนวณดวงดาวจริง
+    let astroData = null;
+    if (birth && birth.date && birth.time && birth.lat && birth.lng && birth.zone) {
+      console.log(`🪐 Calculating natal chart for ${birth.date} ${birth.time} (${birth.zone})`);
+      astroData = await calcAstroChart(birth);
+    }
+
+    // ✨ ดึงคำทำนายจาก Core AI (ใช้ Markdown core)
     const fortune = await getAstrologyPrediction(question);
     console.log("🔮 fortune result:", fortune);
 
@@ -64,13 +72,14 @@ export default async function handler(req, res) {
       warning = `⚠️ เหลือสิทธิ์อีก ${newQuota} ครั้ง`;
     }
 
-    // 📤 ส่ง response กลับแบบ compat (v1.13–v1.16)
+    // 📤 ส่ง response กลับ
     const responsePayload = {
       success: true,
       remaining: newQuota,
       used: user.used_count + 1,
-      prediction: fortune, // ✅ สำหรับ v1.16+
-      answer: fortune,     // ✅ เผื่อ client เก่าที่ยังใช้ answer
+      prediction: fortune,
+      answer: fortune, // เผื่อ client เก่าที่ยังใช้ answer
+      astroData,       // ✅ เพิ่มข้อมูลดวงดาวจริง
       warning,
     };
 
