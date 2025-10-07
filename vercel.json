@@ -17,8 +17,7 @@
     { "src": "/api/health", "dest": "/api/health.js" },
     { "src": "/api/cron/checkExpiry", "dest": "/api/cron/checkExpiry.js" },
 
-    // ✅ เพิ่ม endpoint ใหม่สำหรับดูวันจริง
-    { "src": "/api/weekday", "dest": "/api/weekday.js" }
+        { "src": "/api/weekday", "dest": "/api/weekday.js" }
   ],
   "env": {
     "TZ": "Asia/Bangkok"
