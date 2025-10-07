@@ -3,14 +3,19 @@ import Stripe from "stripe";
 import { google } from "googleapis";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-export const config = { api: { bodyParser: false } };
+
+export const config = {
+  api: {
+    bodyParser: false, // ✅ ต้องปิด bodyParser เพื่อให้ Stripe ตรวจลายเซ็นได้
+  },
+};
 
 /**
- * อัปเดตสิทธิ์สมาชิกเมื่อ Stripe ชำระเงินสำเร็จ
- * - ถ้ามี quota เดิม → บวกเพิ่ม
- * - ถ้ามี expiry เดิม → ต่ออายุจากวันนั้น
+ * ✅ ฟังก์ชันอัปเดตสิทธิ์สมาชิกใน Google Sheet
+ * - ต่ออายุจากวันเดิมถ้ายังไม่หมด
+ * - บวก quota เดิม + quota ใหม่
  */
-async function updateUserQuota({ user_id, token, packageName, payment_intent_id, receipt_url }) {
+async function updateMemberQuota({ user_id, token, packageName, quota, paymentIntentId, receiptUrl }) {
   try {
     const auth = new google.auth.GoogleAuth({
       credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY),
@@ -21,14 +26,15 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     const range = "Members!A:K";
 
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-    const rows = resp.data.values;
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+    const rows = response.data.values;
     if (!rows || rows.length === 0) return false;
 
     const header = rows[0];
     const userIdIndex = header.indexOf("user_id");
     const tokenIndex = header.indexOf("token");
     const quotaIndex = header.indexOf("quota");
+    const usedIndex = header.indexOf("used_count");
     const packageIndex = header.indexOf("package");
     const expiryIndex = header.indexOf("expiry");
     const paymentIntentIndex = header.indexOf("payment_intent_id");
@@ -44,22 +50,15 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
     }
     if (rowIndex === -1) return false;
 
-    // Normalize ชื่อ package
-    const normalized = packageName.toLowerCase();
-
-    // Mapping quota ต่อแพ็กเกจ
-    const quotaMap = { lite: 5, standard: 10, premium: 30 };
-    const addQuota = quotaMap[normalized] || 0;
-
-    // อ่าน quota และ expiry เดิม
+    // ✅ อ่าน quota และ expiry เดิม
     const oldQuota = parseInt(rows[rowIndex - 1][quotaIndex], 10) || 0;
     const oldExpiry = rows[rowIndex - 1][expiryIndex];
     const now = new Date();
 
-    // ✅ บวก quota เดิม + quota ใหม่
-    const newQuota = oldQuota + addQuota;
+    // ✅ คำนวณ quota ใหม่
+    const newQuota = oldQuota + Number(quota || 0);
 
-    // ✅ ต่อวันหมดอายุจากวันเดิม (ถ้ายังไม่หมด)
+    // ✅ ถ้ามี expiry เดิมและยังไม่หมด → ต่อจากวันเดิม
     let baseDate = now;
     if (oldExpiry && new Date(oldExpiry) > now) {
       baseDate = new Date(oldExpiry);
@@ -69,7 +68,7 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
       .toISOString()
       .split("T")[0];
 
-    // อัปเดตกลับเข้า Google Sheet
+    // ✅ เขียนกลับ Google Sheet
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `Members!${String.fromCharCode(65 + packageIndex)}${rowIndex}:${String.fromCharCode(
@@ -78,26 +77,27 @@ async function updateUserQuota({ user_id, token, packageName, payment_intent_id,
       valueInputOption: "RAW",
       requestBody: {
         values: [[
-          normalized,
+          packageName,
           newQuota,
           newExpiry,
-          payment_intent_id,
-          receipt_url,
+          paymentIntentId,
+          receiptUrl,
           new Date().toISOString(),
         ]],
       },
     });
 
-    console.log(`✅ Updated quota +${addQuota} (total ${newQuota}), expiry=${newExpiry} for ${user_id}`);
-    return { quota: newQuota, package: normalized, expiry: newExpiry };
+    console.log(`✅ Updated member ${user_id}: quota +${quota}, expiry=${newExpiry}`);
+    return { newQuota, newExpiry };
   } catch (err) {
-    console.error("❌ updateUserQuota failed:", err.message);
+    console.error("❌ updateMemberQuota failed:", err.message);
     return false;
   }
 }
 
 /**
- * Stripe Webhook Handler
+ * ✅ Stripe Webhook Handler
+ * ฟัง event จาก Stripe ทุกครั้งที่ชำระเงินสำเร็จ
  */
 export default async function handler(req, res) {
   const sig = req.headers["stripe-signature"];
@@ -118,40 +118,45 @@ export default async function handler(req, res) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
-    const { user_id, token, packageName } = session.metadata || {};
+    const { user_id, token, packageName, quota } = session.metadata || {};
 
     if (!user_id || !token || !packageName) {
-      console.error("❌ Metadata missing:", session.metadata);
-      return res.status(400).json({ status: "error", message: "❌ Metadata missing" });
+      console.error("❌ Missing metadata in session:", session.metadata);
+      return res.status(400).json({ status: "error", message: "Missing metadata" });
     }
 
-    const receipt_url =
+    const receiptUrl =
       session?.charges?.data?.[0]?.receipt_url ||
       session?.payment_intent?.charges?.data?.[0]?.receipt_url ||
       null;
 
-    const updated = await updateUserQuota({
+    const updated = await updateMemberQuota({
       user_id,
       token,
       packageName,
-      payment_intent_id: session.payment_intent,
-      receipt_url,
+      quota,
+      paymentIntentId: session.payment_intent,
+      receiptUrl,
     });
 
-    if (!updated) {
-      return res.status(500).json({ status: "error", message: "❌ Update quota failed" });
+    if (updated) {
+      console.log(`🎉 Member updated: user=${user_id}, newQuota=${updated.newQuota}`);
+      return res.status(200).json({
+        status: "success",
+        message: "✅ Payment received and quota updated",
+        user_id,
+        newQuota: updated.newQuota,
+        newExpiry: updated.newExpiry,
+      });
+    } else {
+      return res.status(500).json({
+        status: "error",
+        message: "❌ Failed to update member quota",
+      });
     }
-
-    return res.json({
-      status: "valid",
-      message: "✅ ต่ออายุสำเร็จ / สิทธิ์อัปเดตแล้ว",
-      user_id,
-      token,
-      quota: updated.quota,
-      package: updated.package,
-      expiry: updated.expiry,
-    });
   }
 
-  return res.json({ received: true });
+  // ✅ กรณี event อื่น
+  console.log(`ℹ️ Received unrelated event: ${event.type}`);
+  return res.status(200).json({ received: true });
 }
