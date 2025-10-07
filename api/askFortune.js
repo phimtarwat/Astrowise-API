@@ -1,9 +1,10 @@
 // api/askFortune.js
 import { findUser, logUsage } from "../lib/googleSheet.js";
+import { calcAstroChart } from "../lib/astrologyCoreCalc.js";
 import { google } from "googleapis";
 
 /**
- * ฟังก์ชันอัปเดต quota และ used_count ใน Google Sheet
+ * อัปเดต quota ใน Google Sheet
  */
 async function updateQuota(user_id, token, newQuota, newUsedCount) {
   try {
@@ -52,16 +53,16 @@ async function updateQuota(user_id, token, newQuota, newUsedCount) {
 
 /**
  * API: /api/askFortune
- * ป้องกันดูดวงฟรีโดยบังคับตรวจ user_id + token ทุกครั้ง
+ * เวอร์ชัน Custom GPT + ดวงดาวจริง
  */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ status: "error", message: "❌ ต้องใช้ POST" });
   }
 
-  const { user_id, token, question } = req.body || {};
+  const { user_id, token, question, birth } = req.body || {};
 
-  // ✅ ป้องกัน bypass: ต้องมี user_id + token
+  // ✅ ต้องมี user_id + token
   if (!user_id || !token) {
     return res.status(400).json({
       status: "error",
@@ -69,7 +70,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ ป้องกันถามโดยไม่ระบุคำถาม
+  // ✅ ต้องมีคำถาม
   if (!question || question.trim() === "") {
     return res.status(400).json({
       status: "error",
@@ -77,7 +78,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ ตรวจสอบสิทธิ์ผู้ใช้จาก Google Sheet
+  // ✅ ตรวจสิทธิ์ผู้ใช้
   const user = await findUser(user_id, token);
   if (!user) {
     return res.status(401).json({
@@ -86,7 +87,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ ห้ามใช้ถ้ายังไม่ได้ซื้อแพ็กเกจ
+  // ✅ ตรวจแพ็กเกจ / วันหมดอายุ
   if (!user.package) {
     return res.status(401).json({
       status: "no_package",
@@ -94,7 +95,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ ห้ามใช้ถ้าหมดอายุ
   if (user.expiry && new Date() > new Date(user.expiry)) {
     return res.status(401).json({
       status: "expired",
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ ห้ามใช้ถ้า quota หมด
+  // ✅ ตรวจ quota
   if (user.quota <= 0) {
     return res.status(200).json({
       status: "no_quota",
@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ ผ่านทั้งหมด → หัก quota และบันทึกการใช้งาน
+  // ✅ หัก quota
   const newQuota = user.quota - 1;
   const newUsedCount = (user.used_count || 0) + 1;
   const updated = await updateQuota(user.user_id, user.token, newQuota, newUsedCount);
@@ -126,21 +126,31 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ บันทึกลง UsageLog
+  // ✅ บันทึกการใช้งาน
   await logUsage(user.user_id, user.token, question, newQuota, user.package);
 
-  // ✅ ส่งคำทำนาย (mock หรือเชื่อมระบบจริง)
+  // 🔮 ถ้ามีข้อมูลวัน เวลา และสถานที่เกิด → คำนวณดวงจริง
+  let astroData = null;
+  if (birth && birth.date && birth.time && birth.lat && birth.lng && birth.zone) {
+    console.log(`🪐 Calculating natal chart for ${birth.date} ${birth.time} (${birth.zone})`);
+    astroData = await calcAstroChart(birth);
+  }
+
+  // ✅ ตอบกลับ Custom GPT
   const response = {
     status: "valid",
     remaining: newQuota,
-    answer: `🔮 "${question}" — ระบบได้ประมวลผลคำทำนายสำเร็จ`,
+    question,
+    astroData, // ข้อมูลดาวจริง (Custom GPT จะใช้ต่อเอง)
+    message: astroData
+      ? `🔮 "${question}" — ดวงดาวถูกคำนวณสำเร็จ`
+      : `🔮 "${question}" — ระบบได้ประมวลผลคำทำนายสำเร็จ`,
   };
 
-  // ✅ แจ้งเตือนถ้า quota เหลือน้อย
   if (newQuota < 3) {
     response.warning = `⚠️ เหลือสิทธิ์อีกเพียง ${newQuota} ครั้ง`;
   }
 
-  console.log(`🎯 AskFortune: user=${user_id} → remaining=${newQuota}`);
+  console.log(`🎯 AskFortune done: user=${user_id}, remaining=${newQuota}`);
   return res.status(200).json(response);
 }
