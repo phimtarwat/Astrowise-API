@@ -1,8 +1,10 @@
 // api/gptHandler.js
+import fetch from "node-fetch"; // ✅ fallback สำหรับ Node.js ESM
+
 /**
  * ✅ Internal Relay สำหรับ Custom GPT
- *  GPT จะเรียก endpoint นี้แทนการยิง API ภายนอกโดยตรง
- *  เพื่อหลีกเลี่ยง popup ยืนยันสิทธิ์
+ * GPT จะเรียก endpoint นี้แทนการยิง API ภายนอกโดยตรง
+ * เพื่อหลีกเลี่ยง popup ยืนยันสิทธิ์
  */
 
 export default async function handler(req, res) {
@@ -23,7 +25,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🔁 Mapping ปลายทางจริงใน backend ของคุณ
     const routeMap = {
       askFortune: "/api/askFortune",
       fortuneProxy: "/api/fortuneProxy",
@@ -39,13 +40,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🌐 URL ปลายทาง (เช่น AstroWise API)
     const baseURL = process.env.ASTROWISE_API_BASE_URL || "https://astrowise-api.vercel.app";
     const targetURL = `${baseURL}${targetPath}`;
 
     console.log(`🔁 gptHandler → ${targetURL}`);
 
-    // 📤 ส่งคำขอไปยัง backend จริง
     const response = await fetch(targetURL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -54,7 +53,6 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    // 📥 ส่งผลกลับ GPT
     return res.status(response.status).json(data);
   } catch (err) {
     console.error("❌ gptHandler error:", err.message);
