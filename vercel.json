@@ -13,6 +13,7 @@
     { "src": "/api/gptHandler", "dest": "/api/gptHandler.js" },       // ✅ สำคัญมาก
     { "src": "/api/calcChart", "dest": "/api/calcChart.js" },
     { "src": "/api/health", "dest": "/api/health.js" },
+    { "src": "/api/registerUser", "dest": "/api/registerUser.js" },
     { "src": "/api/cron/checkExpiry", "dest": "/api/cron/checkExpiry.js" }
   ],
   "env": {
