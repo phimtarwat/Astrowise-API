@@ -8,40 +8,37 @@ export default async function handler(req, res) {
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
     const sheets = google.sheets({ version: "v4", auth });
+
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     const range = "Members!A:K";
 
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
     const rows = resp.data.values;
-    if (!rows || rows.length < 2)
-      return res.status(200).json({ message: "No users found" });
+    if (!rows || rows.length <= 1) return res.json({ message: "ไม่มีข้อมูล" });
 
     const header = rows[0];
     const expiryIndex = header.indexOf("expiry");
-    const emailIndex = header.indexOf("email");
 
-    const now = new Date();
-    let expiredCount = 0;
-    let nearExpireCount = 0;
+    const today = new Date().toISOString().split("T")[0];
+    const remaining = [rows[0]]; // keep header
 
     for (let i = 1; i < rows.length; i++) {
-      const expiry = new Date(rows[i][expiryIndex]);
-      if (isNaN(expiry)) continue;
-
-      const diffDays = Math.floor((expiry - now) / (1000 * 60 * 60 * 24));
-      if (diffDays < 0) expiredCount++;
-      else if (diffDays <= 5) nearExpireCount++;
+      const expiry = rows[i][expiryIndex];
+      if (expiry && expiry > today) remaining.push(rows[i]);
     }
 
-    console.log(`📅 Expired=${expiredCount}, Near expiry=${nearExpireCount}`);
-    return res.status(200).json({
-      status: "ok",
-      expiredCount,
-      nearExpireCount,
-      checkedAt: now.toISOString(),
+    // เขียนกลับเฉพาะที่ยังไม่หมดอายุ
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range,
+      valueInputOption: "RAW",
+      requestBody: { values: remaining },
     });
+
+    return res.status(200).json({ message: "ลบข้อมูลที่หมดอายุแล้วเรียบร้อย ✅" });
   } catch (err) {
-    console.error("❌ checkExpiry failed:", err.message);
-    return res.status(500).json({ status: "error", message: err.message });
+    console.error("checkExpiry error:", err);
+    return res.status(500).json({ error: err.message });
   }
 }
