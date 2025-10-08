@@ -1,66 +1,21 @@
 {
-    "version": 2,
-    "builds": [
-        {
-            "src": "api/*.js",
-            "use": "@vercel/node"
-        },
-        {
-            "src": "api/cron/*.js",
-            "use": "@vercel/node"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/api/askFortune",
-            "dest": "/api/askFortune.js"
-        },
-        {
-            "src": "/api/checkToken",
-            "dest": "/api/checkToken.js"
-        },
-        {
-            "src": "/api/createCheckoutSession",
-            "dest": "/api/createCheckoutSession.js"
-        },
-        {
-            "src": "/api/fortuneProxy",
-            "dest": "/api/fortuneProxy.js"
-        },
-        {
-            "src": "/api/getLatestUser",
-            "dest": "/api/getLatestUser.js"
-        },
-        {
-            "src": "/api/pollPayment",
-            "dest": "/api/pollPayment.js"
-        },
-        {
-            "src": "/api/pushMessage",
-            "dest": "/api/pushMessage.js"
-        },
-        {
-            "src": "/api/registerUser",
-            "dest": "/api/registerUser.js"
-        },
-        {
-            "src": "/api/stripeWebhook",
-            "dest": "/api/stripeWebhook.js"
-        },
-        {
-            "src": "/api/health",
-            "dest": "/api/health.js"
-        },
-        {
-            "src": "/api/cron/checkExpiry",
-            "dest": "/api/cron/checkExpiry.js"
-        },
-        {
-            "src": "/api/weekday",
-            "dest": "/api/weekday.js"
-        }
-    ],
-    "env": {
-        "TZ": "Asia/Bangkok"
-    }
+  "version": 2,
+  "builds": [
+    { "src": "api/*.js", "use": "@vercel/node" },
+    { "src": "api/cron/*.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/askFortune", "dest": "/api/askFortune.js" },
+    { "src": "/api/checkToken", "dest": "/api/checkToken.js" },
+    { "src": "/api/createCheckoutSession", "dest": "/api/createCheckoutSession.js" },
+    { "src": "/api/fortuneProxy", "dest": "/api/fortuneProxy.js" },
+    { "src": "/api/stripeWebhook", "dest": "/api/stripeWebhook.js" },
+    { "src": "/api/gptHandler", "dest": "/api/gptHandler.js" },       // ✅ สำคัญมาก
+    { "src": "/api/calcChart", "dest": "/api/calcChart.js" },
+    { "src": "/api/health", "dest": "/api/health.js" },
+    { "src": "/api/cron/checkExpiry", "dest": "/api/cron/checkExpiry.js" }
+  ],
+  "env": {
+    "TZ": "Asia/Bangkok"
+  }
 }
