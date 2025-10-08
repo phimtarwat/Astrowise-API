@@ -1,6 +1,11 @@
 // api/cron/checkExpiry.js
 import { google } from "googleapis";
 
+/**
+ * ✅ Cron job สำหรับลบสมาชิกที่หมดอายุ
+ * - ใช้ลบผู้ใช้ที่ expiry < วันนี้
+ * - ออกแบบให้เรียกทุกวัน (ผ่าน Vercel Cron หรือ CRON job ภายนอก)
+ */
 export default async function handler(req, res) {
   try {
     const auth = new google.auth.GoogleAuth({
@@ -12,33 +17,65 @@ export default async function handler(req, res) {
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     const range = "Members!A:K";
 
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-    const rows = resp.data.values;
-    if (!rows || rows.length <= 1) return res.json({ message: "ไม่มีข้อมูล" });
+    // ดึงข้อมูลจาก Sheet
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range,
+    });
+
+    const rows = result.data.values;
+    if (!rows || rows.length <= 1) {
+      return res.status(200).json({ message: "ไม่มีข้อมูลให้ตรวจสอบ" });
+    }
 
     const header = rows[0];
     const expiryIndex = header.indexOf("expiry");
+    const packageIndex = header.indexOf("package");
 
-    const today = new Date().toISOString().split("T")[0];
-    const remaining = [rows[0]]; // keep header
-
-    for (let i = 1; i < rows.length; i++) {
-      const expiry = rows[i][expiryIndex];
-      if (expiry && expiry > today) remaining.push(rows[i]);
+    if (expiryIndex === -1) {
+      throw new Error("ไม่พบ column 'expiry' ใน Sheet");
     }
 
-    // เขียนกลับเฉพาะที่ยังไม่หมดอายุ
-    await sheets.spreadsheets.values.clear({ spreadsheetId, range });
+    const today = new Date().toISOString().split("T")[0];
+    const keptRows = [header]; // แถวหัวตาราง
+    const removedRows = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const expiry = row[expiryIndex];
+      const pkg = row[packageIndex];
+      if (!expiry) continue;
+
+      // เงื่อนไขลบ: หมดอายุ และยังไม่มี package
+      if (expiry < today && (!pkg || pkg.trim() === "")) {
+        removedRows.push(row);
+      } else {
+        keptRows.push(row);
+      }
+    }
+
+    // เขียนข้อมูลกลับ (เฉพาะที่ยังไม่หมดอายุ)
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range,
+    });
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range,
       valueInputOption: "RAW",
-      requestBody: { values: remaining },
+      requestBody: { values: keptRows },
     });
 
-    return res.status(200).json({ message: "ลบข้อมูลที่หมดอายุแล้วเรียบร้อย ✅" });
+    console.log(`🧹 ลบสมาชิกหมดอายุแล้ว ${removedRows.length} ราย`);
+    return res.status(200).json({
+      status: "success",
+      message: `🧹 ลบสมาชิกหมดอายุแล้ว ${removedRows.length} ราย`,
+    });
   } catch (err) {
-    console.error("checkExpiry error:", err);
-    return res.status(500).json({ error: err.message });
+    console.error("❌ checkExpiry error:", err);
+    return res.status(500).json({
+      status: "error",
+      message: "❌ ระบบลบสมาชิกขัดข้อง: " + err.message,
+    });
   }
 }
