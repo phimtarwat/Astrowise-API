@@ -1,7 +1,8 @@
 // api/fortuneProxy.js
 import { findUser, updateUsage } from "../lib/googleSheet.js";
-import { getAstrologyPrediction } from "../lib/astrologyCoreAI.js"; // ✅ rename แล้ว
-import { calcAstroChart } from "../lib/astrologyCoreCalc.js";       // ✅ ใช้ดึงข้อมูลดวงดาวจริง
+import { getAstrologyPrediction } from "../lib/astrologyCoreAI.js";
+import { calcAstroChart } from "../lib/astrologyCoreCalc.js";
+import { applyAllFilters } from "../lib/filterBundle.js"; // ✅ เพิ่มตรงนี้
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -79,12 +80,22 @@ export default async function handler(req, res) {
       used: user.used_count + 1,
       prediction: fortune,
       answer: fortune, // เผื่อ client เก่าที่ยังใช้ answer
-      astroData,       // ✅ เพิ่มข้อมูลดวงดาวจริง
+      astroData,
       warning,
     };
 
-    console.log("📤 fortuneProxy response:", responsePayload);
+    // 🧩 ผ่าน Filter ก่อนส่งคำทำนายออก
+    if (responsePayload.prediction) {
+      const currentTurn = 1; // หรือใช้จาก session จริง
+      responsePayload.prediction = applyAllFilters(
+        responsePayload.prediction,
+        question,
+        currentTurn
+      );
+      responsePayload.answer = responsePayload.prediction;
+    }
 
+    console.log("📤 fortuneProxy response:", responsePayload);
     return res.json(responsePayload);
   } catch (err) {
     console.error("❌ Error generating fortune:", err);
