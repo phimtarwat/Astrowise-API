@@ -1,5 +1,6 @@
 // api/gptHandler.js
 import fetch from "node-fetch";
+import { applyAllFilters } from "../lib/filterBundle.js"; // ✅ เพิ่มตรงนี้
 
 /**
  * ✅ Internal Relay สำหรับ Custom GPT
@@ -43,7 +44,7 @@ export default async function handler(req, res) {
     if (method === "GET") {
       const query = new URLSearchParams(payload || {}).toString();
       targetURL += `?${query}`;
-      delete fetchOptions.headers; // ไม่ต้องใช้ header JSON
+      delete fetchOptions.headers;
     } else {
       // ✅ POST (askFortune, createCheckoutSession, calcChart)
       fetchOptions.body = JSON.stringify(payload || {});
@@ -54,6 +55,12 @@ export default async function handler(req, res) {
     // ✅ เรียกไปยัง API จริง
     const response = await fetch(targetURL, fetchOptions);
     const data = await response.json();
+
+    // 🧩 ผ่าน Filter ก่อนส่งข้อความออก
+    if (data && data.message) {
+      const currentTurn = 1;
+      data.message = applyAllFilters(data.message, JSON.stringify(payload || {}), currentTurn);
+    }
 
     // ✅ ส่งต่อผลลัพธ์กลับให้ GPT
     return res.status(response.status).json(data);
