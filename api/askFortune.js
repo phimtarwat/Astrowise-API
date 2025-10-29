@@ -2,6 +2,7 @@
 import { findUser, logUsage } from "../lib/googleSheet.js";
 import { calcAstroChart } from "../lib/astrologyCoreCalc.js";
 import { google } from "googleapis";
+import { applyAllFilters } from "../lib/filterBundle.js";
 
 /**
  * ✅ อัปเดต quota ใน Google Sheet
@@ -125,5 +126,12 @@ export default async function handler(req, res) {
   }
 
   console.log(`🎯 AskFortune done: user=${user_id}, remaining=${newQuota}`);
+
+    // 🧩 ผ่าน Filter ก่อนส่งข้อความออก
+  if (response.message) {
+    const currentTurn = 1; // หรือระบบนับรอบจริงถ้ามี
+    response.message = applyAllFilters(response.message, question, currentTurn);
+  }
+  
   return res.status(200).json(response);
 }
